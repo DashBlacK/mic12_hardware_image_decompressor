@@ -260,7 +260,7 @@ initial begin
 	
 	// Apply master reset
 	master_reset;
-	Push_buttons = 4'hF;
+	Push_buttons = 4'h0;
 	
 	@ (posedge Clock_50);
 	// Clear SRAM

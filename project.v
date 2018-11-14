@@ -189,7 +189,12 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			top_state <= S_WAIT_UART_RX;
 		end
 		S_WAIT_UART_RX: begin
-			if ((UART_timer == 26'd49999999) && (UART_SRAM_address != 18'h00000)) begin
+`ifdef SIMULATION
+//			if (UART_timer == 26'd10) begin
+`else
+//			if ((UART_timer == 26'd49999999) && (UART_SRAM_address != 18'h00000)) begin
+`endif
+			if (UART_timer == 26'd10) begin
 				// Timeout for 1 sec on UART for detecting if file transmission is finished
 				UART_rx_initialize <= 1'b1;
 				 				

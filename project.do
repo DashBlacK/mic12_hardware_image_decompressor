@@ -23,7 +23,7 @@ vlog -sv -svinputport=var -work rtl_work +define+SIMULATION UART_Receive_Control
 vlog -sv -svinputport=var -work rtl_work VGA_SRAM_interface.v
 vlog -sv -svinputport=var -work rtl_work UART_SRAM_interface.v
 vlog -sv -svinputport=var -work rtl_work Clock_100_PLL.v
-vlog -sv -svinputport=var -work rtl_work project.v
+vlog -sv -svinputport=var -work rtl_work +define+SIMULATION project.v
 #vlog -sv -svinputport=var -work rtl_work tb_project.v
 vlog -sv -svinputport=var -work rtl_work tb_project_v2.v
 
