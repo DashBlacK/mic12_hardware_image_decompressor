@@ -307,7 +307,6 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			SRAM_use <= 1'b0;
 			SRAM_address_use <= uAddress;
 		end
-		default: top_state <= S_IDLE;
 		S_IDLE_1: begin
 			SRAM_address_use <= SRAM_address_use + 1;
 			uAddress <= uAddress + 2;
@@ -823,6 +822,7 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			end
 			yAddress <= yAddress + 1;
 		end
+		default: top_state <= S_IDLE;
 		endcase
 	end
 end
