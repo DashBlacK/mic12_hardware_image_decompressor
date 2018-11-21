@@ -260,16 +260,11 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 		V_plus_3 <= 8'd0;
 		V_plus_5 <= 8'd0;
 		VGA_enable <= 1'b1;
-		R_odd <= 8'd0;
-		B_odd <= 8'd0;
-		V_odd <= 8'd0;
-		G_odd <= 8'd0;
 		do_read_uv <= 1'b1;
 		yAddress <= 18'd0;
 		uAddress <= 18'd38400;
 		vAddress <= 18'd57600;
 		rgbAddress <= 18'd146944;
-
 	end else begin
 		UART_rx_initialize <= 1'b0;
 		UART_rx_enable <= 1'b0;
@@ -374,13 +369,7 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			SRAM_address_use <= uAddress;
 			Y0 <= SRAM_read_data[15:8];
 			Y1 <= SRAM_read_data[7:0];
-			if (UVcomp[31] == 1) begin
-				U_odd <= 0;
-			end else if (|UVcomp[30:24]) begin
-				U_odd <= 255;
-			end else begin
-				U_odd <= (mult1_result - mult2_result + mult3_result + 128) >> 8;
-			end
+			U_odd <= UVcomp[15:8];
 			mult1_op_1 <= V_plus_5 + V_minus_5;
 			mult1_op_2 <= 21;
 			mult2_op_1 <= V_plus_3 + V_minus_3;
@@ -399,13 +388,7 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			mult2_op_2 <= 132251;
 			mult3_op_1 <= V_even - 128;
 			mult3_op_2 <= 104595;
-			if (UVcomp[31] == 1) begin
-				V_odd <= 0;
-			end else if (|UVcomp[30:24]) begin
-				V_odd <= 255;
-			end else begin
-				V_odd <= (mult1_result - mult2_result + mult3_result + 128) >> 8;
-			end
+			V_odd <= UVcomp[15:8];
 			top_state <= S_7;
 		end
 		S_7: begin
@@ -522,13 +505,7 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			mult2_op_2 <= 52;
 			mult3_op_1 <= V_plus_1 + V_minus_1;
 			mult3_op_2 <= 159;
-			if (UVcomp[31] == 1) begin
-				U_odd <= 0;
-			end else if (|UVcomp[30:24]) begin
-				U_odd <= 255;
-			end else begin
-				U_odd <= (mult1_result - mult2_result + mult3_result + 128) >> 8;
-			end
+			U_odd <= UVcomp[15:8];
 			Y0 <= SRAM_read_data[15:8];
 			Y1 <= SRAM_read_data[7:0];
 			top_state <= S_12;
@@ -550,13 +527,7 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			mult2_op_2 <= 132251;
 			mult3_op_1 <= V_even - 128;
 			mult3_op_2 <= 104595;
-			if (UVcomp[31] == 1) begin
-				V_odd <= 0;
-			end else if (|UVcomp[30:24]) begin
-				V_odd <= 255;
-			end else begin
-				V_odd <= (mult1_result - mult2_result + mult3_result + 128) >> 8;
-			end
+			V_odd <= UVcomp[15:8];
 			top_state <= S_13;
 		end
 		S_13: begin
@@ -704,13 +675,7 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			mult2_op_2 <= 52;
 			mult3_op_1 <= V_plus_1 + V_minus_1;
 			mult3_op_2 <= 159;
-			if (UVcomp[31] == 1) begin
-				U_odd <= 0;
-			end else if (|UVcomp[30:24]) begin
-				U_odd <= 255;
-			end else begin
-				U_odd <= (mult1_result - mult2_result + mult3_result + 128) >> 8;
-			end
+			U_odd <= UVcomp[15:8];
 			Y0 <= SRAM_read_data[15:8];
 			Y1 <= SRAM_read_data[7:0];
 			top_state <= S_LEADOUT_2;
@@ -724,13 +689,7 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			mult2_op_2 <= 132251;
 			mult3_op_1 <= V_even - 128;
 			mult3_op_2 <= 104595;
-			if (UVcomp[31] == 1) begin
-				V_odd <= 0;
-			end else if (|UVcomp[30:24]) begin
-				V_odd <= 255;
-			end else begin
-				V_odd <= (mult1_result - mult2_result + mult3_result + 128) >> 8;
-			end
+			V_odd <= UVcomp[15:8];
 			top_state <= S_LEADOUT_3;
 		end
 		S_LEADOUT_3: begin
