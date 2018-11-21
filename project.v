@@ -35,16 +35,16 @@ module project (
 		output logic[9:0] VGA_RED_O,              // VGA red
 		output logic[9:0] VGA_GREEN_O,            // VGA green
 		output logic[9:0] VGA_BLUE_O,             // VGA blue
-		
+
 		/////// SRAM Interface                    ////////////
 		inout wire[15:0] SRAM_DATA_IO,            // SRAM data bus 16 bits
 		output logic[17:0] SRAM_ADDRESS_O,        // SRAM address bus 18 bits
-		output logic SRAM_UB_N_O,                 // SRAM high-byte data mask 
+		output logic SRAM_UB_N_O,                 // SRAM high-byte data mask
 		output logic SRAM_LB_N_O,                 // SRAM low-byte data mask 
 		output logic SRAM_WE_N_O,                 // SRAM write enable
 		output logic SRAM_CE_N_O,                 // SRAM chip enable
 		output logic SRAM_OE_N_O,                 // SRAM output logic enable
-		
+
 		/////// UART                              ////////////
 		input logic UART_RX_I,                    // UART receive signal
 		output logic UART_TX_O                    // UART transmit signal
@@ -67,7 +67,7 @@ logic [17:0] SRAM_address;
 logic [17:0] SRAM_address_use; // custom address
 logic SRAM_use; // custom flag
 logic [15:0] SRAM_write_data;
-logic [15:0] SRAM_write_data_use; // custom register
+logic [15:0] SRAM_write_data_use; // custom write data register
 logic SRAM_we_n;
 logic [15:0] SRAM_read_data;
 logic SRAM_ready;
@@ -85,7 +85,7 @@ logic [6:0] value_7_segment [7:0];
 // For error detection in UART
 logic [3:0] Frame_error;
 
-// Stuff
+// U shift register
 logic [7:0] U_minus_5; // Value exits here
 logic [7:0] U_minus_3;
 logic [7:0] U_minus_1;
@@ -93,14 +93,15 @@ logic [7:0] U_plus_1;
 logic [7:0] U_plus_3;
 logic [7:0] U_plus_5; // New value goes here
 
-// V
-logic [7:0] V_minus_5;
+// V shift register
+logic [7:0] V_minus_5; // Value exits here
 logic [7:0] V_minus_3;
 logic [7:0] V_minus_1;
 logic [7:0] V_plus_1;
 logic [7:0] V_plus_3;
-logic [7:0] V_plus_5;
+logic [7:0] V_plus_5; // New value goes here
 
+// Y value registers
 logic [7:0] Y0;
 logic [7:0] Y1;
 
@@ -110,26 +111,27 @@ logic [7:0] U_even;
 logic [7:0] V_odd;
 logic [7:0] V_even;
 
+// Multiplier stuff
 logic [31:0] mult1_op_1;
 logic [31:0] mult1_op_2;
 logic [31:0] mult1_result;
-
 logic [31:0] mult2_op_1;
 logic [31:0] mult2_op_2;
 logic [31:0] mult2_result;
-
 logic [31:0] mult3_op_1;
 logic [31:0] mult3_op_2;
 logic [31:0] mult3_result;
 
+// Address registers
 logic [17:0] yAddress;
 logic [17:0] uAddress;
 logic [17:0] vAddress;
 logic [17:0] rgbAddress;
 
+// common case toggle flag
 logic do_read_uv;
 
-// RGB
+// RGB calculation stuff
 logic [7:0] R_even;
 logic [7:0] R_odd;
 logic [7:0] G_even;
@@ -150,7 +152,7 @@ assign resetn = ~SWITCH_I[17] && SRAM_ready;
 PB_Controller PB_unit (
 	.Clock_50(CLOCK_50_I),
 	.Resetn(resetn),
-	.PB_signal(PUSH_BUTTON_I),	
+	.PB_signal(PUSH_BUTTON_I),
 	.PB_pushed(PB_pushed)
 );
 
@@ -159,12 +161,12 @@ VGA_SRAM_interface VGA_unit (
 	.Clock(CLOCK_50_I),
 	.Resetn(resetn),
 	.VGA_enable(VGA_enable),
-   
+
 	// For accessing SRAM
 	.SRAM_base_address(VGA_base_address),
 	.SRAM_address(VGA_SRAM_address),
 	.SRAM_read_data(SRAM_read_data),
-   
+
 	// To VGA pins
 	.VGA_CLOCK_O(VGA_CLOCK_O),
 	.VGA_HSYNC_O(VGA_HSYNC_O),
@@ -179,12 +181,12 @@ VGA_SRAM_interface VGA_unit (
 // UART SRAM interface
 UART_SRAM_interface UART_unit(
 	.Clock(CLOCK_50_I),
-	.Resetn(resetn), 
-   
+	.Resetn(resetn),
+
 	.UART_RX_I(UART_RX_I),
 	.Initialize(UART_rx_initialize),
 	.Enable(UART_rx_enable),
-   
+
 	// For accessing SRAM
 	.SRAM_address(UART_SRAM_address),
 	.SRAM_write_data(UART_SRAM_write_data),
@@ -199,9 +201,9 @@ SRAM_Controller SRAM_unit (
 	.SRAM_address(SRAM_address),
 	.SRAM_write_data(SRAM_write_data),
 	.SRAM_we_n(SRAM_we_n),
-	.SRAM_read_data(SRAM_read_data),		
+	.SRAM_read_data(SRAM_read_data),
 	.SRAM_ready(SRAM_ready),
-		
+
 	// To the SRAM pins
 	.SRAM_DATA_IO(SRAM_DATA_IO),
 	.SRAM_ADDRESS_O(SRAM_ADDRESS_O),
@@ -212,21 +214,23 @@ SRAM_Controller SRAM_unit (
 	.SRAM_OE_N_O(SRAM_OE_N_O)
 );
 
+// Multipliers
 assign mult1_result = mult1_op_1*mult1_op_2;
 assign mult2_result = mult2_op_1*mult2_op_2;
 assign mult3_result = mult3_op_1*mult3_op_2;
 
+// Adders
 assign Rcomp = (mult1_result + mult3_result);
 assign Gcomp = (mult1_result - mult2_result - mult3_result);
 assign Bcomp = (mult1_result + mult2_result);
 assign UVcomp = (mult1_result + mult3_result + 128 - mult2_result);
 
-logic [17:0] rgbAddress_max_commoncase;
+logic [17:0] rgbMax;
 logic exit_commoncase;
 logic [1:0] leadout_counter;
 
 always_comb begin
-	if(rgbAddress >= rgbAddress_max_commoncase) begin
+	if(rgbAddress >= rgbMax) begin
 		exit_commoncase = 1'b1;
 	end else begin
 		exit_commoncase = 1'b0;
@@ -236,10 +240,8 @@ end
 always @(posedge CLOCK_50_I or negedge resetn) begin
 	if (~resetn) begin
 		top_state <= S_IDLE;
-		
-		rgbAddress_max_commoncase <= 18'd146944 + 18'd468;
+		rgbMax <= 18'd146944 + 18'd468;
 		leadout_counter <= 2'd0;
-
 		UART_rx_initialize <= 1'b0;
 		UART_rx_enable <= 1'b0;
 		UART_timer <= 26'd0;
@@ -263,7 +265,6 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 		V_odd <= 8'd0;
 		G_odd <= 8'd0;
 		do_read_uv <= 1'b1;
-		
 		yAddress <= 18'd0;
 		uAddress <= 18'd38400;
 		vAddress <= 18'd57600;
@@ -272,7 +273,7 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 	end else begin
 		UART_rx_initialize <= 1'b0;
 		UART_rx_enable <= 1'b0;
-		
+
 		// Timer for timeout on UART
 		// This counter reset itself every time a new data is received on UART
 		if (UART_rx_initialize | ~UART_SRAM_we_n) UART_timer <= 26'd0;
@@ -280,13 +281,13 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 
 		case (top_state)
 		S_IDLE: begin
-			VGA_enable <= 1'b1;   
+			VGA_enable <= 1'b1;
 			if (~UART_RX_I | PB_pushed[0]) begin
 				// UART detected a signal, or PB0 is pressed
 				UART_rx_initialize <= 1'b1;
-				
+
 				VGA_enable <= 1'b0;
-								
+
 				top_state <= S_ENABLE_UART_RX;
 			end
 		end
@@ -303,31 +304,29 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 `endif
 				// Timeout for 1 sec on UART for detecting if file transmission is finished
 				UART_rx_initialize <= 1'b1;
-				 				
+
 				VGA_enable <= 1'b1;
-				
+
 				top_state <= S_IDLE_1;
 			end
 			SRAM_use <= 1'b0;
-			//SRAM_we_n <= 1'b1; // Read mode
-			//SRAM_use <= 1'b1; // THIS IS THE WRITE MODE ENALBEL FLAG
-			SRAM_address_use <= uAddress; // Starting point for U: U[0:1]
+			SRAM_address_use <= uAddress;
 		end
 		default: top_state <= S_IDLE;
 		S_IDLE_1: begin
-			SRAM_address_use <= SRAM_address_use + 1; // U[2:3]
+			SRAM_address_use <= SRAM_address_use + 1;
 			uAddress <= uAddress + 2;
 			top_state <= S_IDLE_2;
 		end
 		S_IDLE_2: begin
-			SRAM_address_use <= vAddress; // Starting point for V
+			SRAM_address_use <= vAddress;
 			vAddress <= vAddress + 1;
 			top_state <= S_1;
 		end
 		S_1: begin
 			SRAM_address_use <= vAddress;
 			vAddress <= vAddress + 1;
-			U_plus_5 <= SRAM_read_data[7:0]; // Receive U[0:1]
+			U_plus_5 <= SRAM_read_data[7:0];
 			U_plus_3 <= SRAM_read_data[15:8];
 			U_plus_1 <= SRAM_read_data[15:8];
 			U_minus_1 <= SRAM_read_data[15:8];
@@ -336,9 +335,9 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			top_state <= S_2;
 		end
 		S_2: begin
-			SRAM_address_use <= yAddress; // Starting point for Y
+			SRAM_address_use <= yAddress;
 			yAddress <= yAddress + 1;
-			U_plus_5 <= SRAM_read_data[7:0]; // Receive U[2:3]
+			U_plus_5 <= SRAM_read_data[7:0];
 			U_plus_3 <= SRAM_read_data[15:8];
 			U_plus_1 <= U_plus_5;
 			U_minus_1 <= U_plus_3;
@@ -390,10 +389,10 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			mult3_op_2 <= 159;
 			V_even <= V_minus_1;
 			U_even <= U_minus_1;
-			top_state <= S_6; // wait for V to finish updating register from S_4
+			top_state <= S_6;
 		end
 		S_6: begin
-			SRAM_address_use <= vAddress; // Starting point for V
+			SRAM_address_use <= vAddress;
 			mult1_op_1 <= Y0 - 16;
 			mult1_op_2 <= 76284;
 			mult2_op_1 <= U_even - 128;
@@ -407,7 +406,7 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			end else begin
 				V_odd <= (mult1_result - mult2_result + mult3_result + 128) >> 8;
 			end
-			top_state <= S_7; // loop here forever
+			top_state <= S_7;
 		end
 		S_7: begin
 			SRAM_address_use <= yAddress;
@@ -417,19 +416,21 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			mult2_op_2 <= 53281;
 			mult3_op_1 <= U_even - 128;
 			mult3_op_2 <= 25624;
+			// Bounds checking for red
 			if (Rcomp[31] == 1) begin
 				R_even <= 8'd0;
 			end else if (|Rcomp[30:24]) begin
 				R_even <= 8'd255;
 			end else begin
-				R_even <= (mult1_result + mult3_result) >> 16;
+				R_even <= Rcomp[23:16];
 			end
+			// Bounds checking for blue
 			if (Bcomp[31] == 1) begin
 				B_even <= 8'd0;
 			end else if (|Bcomp[30:24]) begin
 				B_even <= 8'd255;
 			end else begin
-				B_even <= (mult1_result + mult2_result) >> 16;
+				B_even <= Bcomp[23:16];
 			end
 			top_state <= S_8;
 		end
@@ -440,18 +441,19 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			mult2_op_2 <= 132251;
 			mult3_op_1 <= V_odd - 128;
 			mult3_op_2 <= 104595;
-			U_plus_5 <= SRAM_read_data[15:8]; // Receive U[2:3]
+			U_plus_5 <= SRAM_read_data[15:8];
 			U_plus_3 <= U_plus_5;
 			U_plus_1 <= U_plus_3;
 			U_minus_1 <= U_plus_1;
 			U_minus_3 <= U_minus_1;
 			U_minus_5 <= U_minus_3;
+			// Bounds checking for green
 			if (Gcomp[31] == 1) begin
 				G_even <= 8'd0;
 			end else if (|Gcomp[30:24]) begin
 				G_even <= 8'd255;
 			end else begin
-				G_even <= (mult1_result - mult2_result - mult3_result) >> 16;
+				G_even <= Gcomp[23:16];
 			end
 			top_state <= S_9;
 		end
@@ -460,26 +462,27 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			mult2_op_2 <= 53281;
 			mult3_op_1 <= U_odd - 128;
 			mult3_op_2 <= 25624;
+			// Bounds checking for red
 			if (Rcomp[31] == 1) begin
 				R_odd <= 8'd0;
 			end else if (|Rcomp[30:24]) begin
 				R_odd <= 8'd255;
 			end else begin
-				R_odd <= (mult1_result + mult3_result) >> 16;
+				R_odd <= Rcomp[23:16];
 			end
+			// Bounds checking for blue
 			if (Bcomp[31] == 1) begin
 				B_odd <= 8'd0;
 			end else if (|Bcomp[30:24]) begin
 				B_odd <= 8'd255;
 			end else begin
-				B_odd <= (mult1_result + mult2_result) >> 16;
+				B_odd <= Bcomp[23:16];
 			end
-			SRAM_use <= 1'b1; // Get ready to write to SRAM
+			SRAM_use <= 1'b1;
 			SRAM_address_use <= rgbAddress;
 			rgbAddress <= rgbAddress + 1;
-			SRAM_write_data_use[15:8] <= R_even;
-			SRAM_write_data_use[7:0] <= G_even;
-			V_plus_5 <= SRAM_read_data[15:8]; // Receive U[2:3]
+			SRAM_write_data_use <= {{R_even},{G_even}};
+			V_plus_5 <= SRAM_read_data[15:8];
 			V_plus_3 <= V_plus_5;
 			V_plus_1 <= V_plus_3;
 			V_minus_1 <= V_plus_1;
@@ -488,8 +491,7 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			top_state <= S_10;
 		end
 		S_10: begin
-			SRAM_write_data_use[15:8] <= B_even;
-			SRAM_write_data_use[7:0] <= R_odd;
+			SRAM_write_data_use <= {{B_even},{R_odd}};
 			SRAM_address_use <= rgbAddress;
 			rgbAddress <= rgbAddress + 1;
 			top_state <= S_11;
@@ -501,12 +503,13 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			mult3_op_2 <= 159;
 			U_even <= U_minus_1;
 			V_even <= V_minus_1;
+			// Bounds checking for green
 			if (Gcomp[31] == 1) begin
 				G_odd <= 8'd0;
 			end else if (|Gcomp[30:24]) begin
 				G_odd <= 8'd255;
 			end else begin
-				G_odd <= (mult1_result - mult2_result - mult3_result) >> 16;
+				G_odd <= Gcomp[23:16];
 			end
 		end
 		S_11: begin
@@ -538,12 +541,9 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				SRAM_address_use <= uAddress - 1;
 				uAddress <= uAddress - 1;
 			end
-
 			if (do_read_uv == 1'b0) begin
 				uAddress <= uAddress + 1;
 			end
-				
-
 			mult1_op_1 <= Y0 - 16;
 			mult1_op_2 <= 76284;
 			mult2_op_1 <= U_even - 128;
@@ -567,28 +567,28 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				SRAM_address_use <= vAddress - 1;
 				vAddress <= vAddress - 1;
 			end
-
 			if (do_read_uv == 1'b0) begin
 				vAddress <= vAddress + 1;
 			end
-
 			mult2_op_1 <= V_even - 128;
 			mult2_op_2 <= 53281;
 			mult3_op_1 <= U_even - 128;
 			mult3_op_2 <= 25624;
+			// Bounds checking for red
 			if (Rcomp[31] == 1) begin
 				R_even <= 8'd0;
 			end else if (|Rcomp[30:24]) begin
 				R_even <= 8'd255;
 			end else begin
-				R_even <= (mult1_result + mult3_result) >> 16;
+				R_even <= Rcomp[23:16];
 			end
+			// Bounds checking for blue
 			if (Bcomp[31] == 1) begin
 				B_even <= 8'd0;
 			end else if (|Bcomp[30:24]) begin
 				B_even <= 8'd255;
 			end else begin
-				B_even <= (mult1_result + mult2_result) >> 16;
+				B_even <= Bcomp[23:16];
 			end
 			top_state <= S_14;
 		end
@@ -601,12 +601,13 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			mult2_op_2 <= 132251;
 			mult3_op_1 <= V_odd - 128;
 			mult3_op_2 <= 104595;
+			// Bounds checking for green
 			if (Gcomp[31] == 1) begin
 				G_even <= 8'd0;
 			end else if (|Gcomp[30:24]) begin
 				G_even <= 8'd255;
 			end else begin
-				G_even <= (mult1_result - mult2_result - mult3_result) >> 16;
+				G_even <= Gcomp[23:16];
 			end
 			top_state <= S_15;
 		end
@@ -615,17 +616,15 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			SRAM_write_data_use <= {{R_even},{G_even}};
 			SRAM_address_use <= rgbAddress;
 			rgbAddress <= rgbAddress + 1;
-
 			if(!exit_commoncase) begin
 				if (do_read_uv == 1'b0) begin
-					U_plus_5 <= SRAM_read_data[7:0]; // Receive U[2:3]
+					U_plus_5 <= SRAM_read_data[7:0];
 				end else begin
 					U_plus_5 <= SRAM_read_data[15:8];
 				end
 			end else begin
 				U_plus_5 <= SRAM_read_data[7:0];
 			end
-			
 			U_plus_3 <= U_plus_5;
 			U_plus_1 <= U_plus_3;
 			U_minus_1 <= U_plus_1;
@@ -635,19 +634,21 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			mult2_op_2 <= 53281;
 			mult3_op_1 <= U_odd - 128;
 			mult3_op_2 <= 25624;
+			// Bounds checking for red
 			if (Rcomp[31] == 1) begin
 				R_odd <= 8'd0;
 			end else if (|Rcomp[30:24]) begin
 				R_odd <= 8'd255;
 			end else begin
-				R_odd <= (mult1_result + mult3_result) >> 16;
+				R_odd <= Rcomp[23:16];
 			end
+			// Bounds checking for blue
 			if (Bcomp[31] == 1) begin
 				B_odd <= 8'd0;
 			end else if (|Bcomp[30:24]) begin
 				B_odd <= 8'd255;
 			end else begin
-				B_odd <= (mult1_result + mult2_result) >> 16;
+				B_odd <= Bcomp[23:16];
 			end
 			top_state <= S_16;
 		end
@@ -655,17 +656,15 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			SRAM_write_data_use <= {{B_even},{R_odd}};
 			SRAM_address_use <= rgbAddress;
 			rgbAddress <= rgbAddress + 1;
-
 			if(!exit_commoncase) begin
 				if (do_read_uv == 1'b0) begin
-					V_plus_5 <= SRAM_read_data[7:0]; // Receive U[2:3]
+					V_plus_5 <= SRAM_read_data[7:0];
 				end else begin
 					V_plus_5 <= SRAM_read_data[15:8];
 				end
 			end else begin
 				V_plus_5 <= SRAM_read_data[7:0];
 			end
-			
 			do_read_uv <= ~do_read_uv;
 			V_plus_3 <= V_plus_5;
 			V_plus_1 <= V_plus_3;
@@ -680,20 +679,20 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			mult3_op_2 <= 159;
 			U_even <= U_minus_1;
 			V_even <= V_plus_1;
+			// Bounds checking for green
 			if (Gcomp[31] == 1) begin
 				G_odd <= 8'd0;
 			end else if (|Gcomp[30:24]) begin
 				G_odd <= 8'd255;
 			end else begin
-				G_odd <= (mult1_result - mult2_result - mult3_result) >> 16;
+				G_odd <= Gcomp[23:16];
 			end
 			if(exit_commoncase) begin
-				rgbAddress_max_commoncase <= rgbAddress_max_commoncase + 18'd480;
+				rgbMax <= rgbMax + 18'd480;
 				top_state <= S_LEADOUT_1;
 			end else begin
 				top_state <= S_11;
 			end
-
 		end
 		S_LEADOUT_1: begin
 			SRAM_write_data_use <= {{G_odd},{B_odd}};
@@ -740,19 +739,21 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			mult2_op_2 <= 53281;
 			mult3_op_1 <= U_even - 128;
 			mult3_op_2 <= 25624;
+			// Bounds checking for red
 			if (Rcomp[31] == 1) begin
 				R_even <= 8'd0;
 			end else if (|Rcomp[30:24]) begin
 				R_even <= 8'd255;
 			end else begin
-				R_even <= (mult1_result + mult3_result) >> 16;
+				R_even <= Rcomp[23:16];
 			end
+			// Bounds checking for blue
 			if (Bcomp[31] == 1) begin
 				B_even <= 8'd0;
 			end else if (|Bcomp[30:24]) begin
 				B_even <= 8'd255;
 			end else begin
-				B_even <= (mult1_result + mult2_result) >> 16;
+				B_even <= Bcomp[23:16];
 			end
 			top_state <= S_LEADOUT_4;
 		end
@@ -767,12 +768,13 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			mult2_op_2 <= 132251;
 			mult3_op_1 <= V_odd - 128;
 			mult3_op_2 <= 104595;
+			// Bounds checking for green
 			if (Gcomp[31] == 1) begin
 				G_even <= 8'd0;
 			end else if (|Gcomp[30:24]) begin
 				G_even <= 8'd255;
 			end else begin
-				G_even <= (mult1_result - mult2_result - mult3_result) >> 16;
+				G_even <= Gcomp[23:16];
 			end
 			top_state <= S_LEADOUT_5;
 		end
@@ -781,41 +783,40 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			SRAM_write_data_use <= {{R_even},{G_even}};
 			SRAM_address_use <= rgbAddress;
 			rgbAddress <= rgbAddress + 1;
-
-			U_plus_5 <= SRAM_read_data[7:0]; // Receive U[2:3]
+			U_plus_5 <= SRAM_read_data[7:0];
 			U_plus_3 <= U_plus_5;
 			U_plus_1 <= U_plus_3;
 			U_minus_1 <= U_plus_1;
 			U_minus_3 <= U_minus_1;
 			U_minus_5 <= U_minus_3;
-
 			mult2_op_1 <= V_odd - 128;
 			mult2_op_2 <= 53281;
 			mult3_op_1 <= U_odd - 128;
 			mult3_op_2 <= 25624;
+			// Bounds checking for red
 			if (Rcomp[31] == 1) begin
 				R_odd <= 8'd0;
 			end else if (|Rcomp[30:24]) begin
 				R_odd <= 8'd255;
 			end else begin
-				R_odd <= (mult1_result + mult3_result) >> 16;
+				R_odd <= Rcomp[23:16];
 			end
+			// Bounds checking for blue
 			if (Bcomp[31] == 1) begin
 				B_odd <= 8'd0;
 			end else if (|Bcomp[30:24]) begin
 				B_odd <= 8'd255;
 			end else begin
-				B_odd <= (mult1_result + mult2_result) >> 16;
+				B_odd <= Bcomp[23:16];
 			end
 			leadout_counter <= leadout_counter + 2'd1;
-
 			top_state <= S_LEADOUT_6;
 		end
 		S_LEADOUT_6: begin
 			SRAM_write_data_use <= {{B_even},{R_odd}};
 			SRAM_address_use <= rgbAddress;
 			rgbAddress <= rgbAddress + 1;
-			V_plus_5 <= SRAM_read_data[7:0]; // Receive U[2:3]
+			V_plus_5 <= SRAM_read_data[7:0];
 			V_plus_3 <= V_plus_5;
 			V_plus_1 <= V_plus_3;
 			V_minus_1 <= V_plus_1;
@@ -829,12 +830,13 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			mult3_op_2 <= 159;
 			U_even <= U_minus_1;
 			V_even <= V_plus_1;
+			// Bounds checking for green
 			if (Gcomp[31] == 1) begin
 				G_odd <= 8'd0;
 			end else if (|Gcomp[30:24]) begin
 				G_odd <= 8'd255;
 			end else begin
-				G_odd <= (mult1_result - mult2_result - mult3_result) >> 16;
+				G_odd <= Gcomp[23:16];
 			end
 			if(leadout_counter == 2'd3) begin
 				top_state <= S_DELAY_1;
@@ -862,38 +864,29 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			end
 			yAddress <= yAddress + 1;
 		end
-
 		endcase
 	end
 end
 
 assign VGA_base_address = 18'd146944;
 
-// Give access to SRAM for UART and VGA at appropriate time
-//assign SRAM_address = ((top_state == S_ENABLE_UART_RX) | (top_state == S_WAIT_UART_RX)) 
-//						? UART_SRAM_address 
-//						: VGA_SRAM_address;
-
 always_comb begin
-	// TODO: FIX THIS SRAM ADDRESS SWITCHING LOGIC
 	if ((top_state == S_ENABLE_UART_RX) || (top_state == S_WAIT_UART_RX) || (top_state == S_IDLE)) begin
-		SRAM_address = ((top_state == S_ENABLE_UART_RX) | (top_state == S_WAIT_UART_RX)) 
-						? UART_SRAM_address 
+		SRAM_address = ((top_state == S_ENABLE_UART_RX) | (top_state == S_WAIT_UART_RX))
+						? UART_SRAM_address
 						: VGA_SRAM_address;
 	end else begin
-		SRAM_address = SRAM_address_use; 
+		SRAM_address = SRAM_address_use;
 	end
-	
 	if ((top_state == S_ENABLE_UART_RX) || (top_state == S_WAIT_UART_RX) || (top_state == S_IDLE)) begin
-		SRAM_we_n = ((top_state == S_ENABLE_UART_RX) | (top_state == S_WAIT_UART_RX)) 
-						? UART_SRAM_we_n 
+		SRAM_we_n = ((top_state == S_ENABLE_UART_RX) | (top_state == S_WAIT_UART_RX))
+						? UART_SRAM_we_n
 						: 1'b1;
 	end else if (SRAM_use == 1'b1) begin
 		SRAM_we_n = 1'b0;
 	end else begin
 		SRAM_we_n = 1'b1;
 	end
-	
 	if ((top_state == S_ENABLE_UART_RX) || (top_state == S_WAIT_UART_RX) || (top_state == S_IDLE)) begin
 		SRAM_write_data = UART_SRAM_write_data;
 	end else begin
@@ -901,54 +894,48 @@ always_comb begin
 	end
 end
 
-//assign SRAM_write_data = UART_SRAM_write_data;
-
-//assign SRAM_we_n = ((top_state == S_ENABLE_UART_RX) | (top_state == S_WAIT_UART_RX)) 
-//						? UART_SRAM_we_n 
-//						: 1'b1;
-
 // 7 segment displays
 convert_hex_to_seven_segment unit7 (
-	.hex_value(SRAM_read_data[15:12]), 
+	.hex_value(SRAM_read_data[15:12]),
 	.converted_value(value_7_segment[7])
 );
 
 convert_hex_to_seven_segment unit6 (
-	.hex_value(SRAM_read_data[11:8]), 
+	.hex_value(SRAM_read_data[11:8]),
 	.converted_value(value_7_segment[6])
 );
 
 convert_hex_to_seven_segment unit5 (
-	.hex_value(SRAM_read_data[7:4]), 
+	.hex_value(SRAM_read_data[7:4]),
 	.converted_value(value_7_segment[5])
 );
 
 convert_hex_to_seven_segment unit4 (
-	.hex_value(SRAM_read_data[3:0]), 
+	.hex_value(SRAM_read_data[3:0]),
 	.converted_value(value_7_segment[4])
 );
 
 convert_hex_to_seven_segment unit3 (
-	.hex_value({2'b00, SRAM_address[17:16]}), 
+	.hex_value({2'b00, SRAM_address[17:16]}),
 	.converted_value(value_7_segment[3])
 );
 
 convert_hex_to_seven_segment unit2 (
-	.hex_value(SRAM_address[15:12]), 
+	.hex_value(SRAM_address[15:12]),
 	.converted_value(value_7_segment[2])
 );
 
 convert_hex_to_seven_segment unit1 (
-	.hex_value(SRAM_address[11:8]), 
+	.hex_value(SRAM_address[11:8]),
 	.converted_value(value_7_segment[1])
 );
 
 convert_hex_to_seven_segment unit0 (
-	.hex_value(SRAM_address[7:4]), 
+	.hex_value(SRAM_address[7:4]),
 	.converted_value(value_7_segment[0])
 );
 
-assign   
+assign
    SEVEN_SEGMENT_N_O[0] = value_7_segment[0],
    SEVEN_SEGMENT_N_O[1] = value_7_segment[1],
    SEVEN_SEGMENT_N_O[2] = value_7_segment[2],

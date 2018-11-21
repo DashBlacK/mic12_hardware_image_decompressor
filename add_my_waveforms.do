@@ -3,8 +3,6 @@
 # add waves to waveform
 add wave Clock_50
 add wave uut/top_state
-add wave uut/exit_commoncase
-#add wave -unsigned uut/rgbMax
 add wave -divider {SRAM Control}
 add wave uut/SRAM_we_n
 add wave -hexadecimal uut/SRAM_write_data
@@ -15,6 +13,7 @@ add wave -unsigned uut/yAddress
 add wave -unsigned uut/uAddress
 add wave -unsigned uut/vAddress
 add wave -unsigned uut/rgbAddress
+add wave -unsigned uut/rgbMax
 add wave -divider {Multiplier 1}
 add wave -decimal uut/mult1_op_1
 add wave -decimal uut/mult1_op_2
@@ -28,19 +27,15 @@ add wave -decimal uut/mult3_op_1
 add wave -decimal uut/mult3_op_2
 add wave -decimal uut/mult3_result
 add wave -divider {U Prime}
-add wave -decimal uut/UVcomp
 add wave -hexadecimal uut/U_even
 add wave -hexadecimal uut/U_odd
 add wave -divider {V Prime}
-add wave -decimal uut/UVcomp
 add wave -hexadecimal uut/V_even
 add wave -hexadecimal uut/V_odd
 add wave -divider {Y}
-add wave -unsigned uut/yAddress
 add wave -hexadecimal uut/Y0
 add wave -hexadecimal uut/Y1
 add wave -divider {U Shift Registers}
-add wave -unsigned uut/uAddress
 add wave -hexadecimal uut/U_plus_5
 add wave -hexadecimal uut/U_plus_3
 add wave -hexadecimal uut/U_plus_1
@@ -48,7 +43,6 @@ add wave -hexadecimal uut/U_minus_1
 add wave -hexadecimal uut/U_minus_3
 add wave -hexadecimal uut/U_minus_5
 add wave -divider {V Shift Registers}
-add wave -unsigned uut/vAddress
 add wave -hexadecimal uut/V_plus_5
 add wave -hexadecimal uut/V_plus_3
 add wave -hexadecimal uut/V_plus_1
