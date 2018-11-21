@@ -10,5 +10,5 @@
 *.ini
 *.mem
 *.ppm
-*.wif
+*.wlf
 rtl_work/
