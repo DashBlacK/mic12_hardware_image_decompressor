@@ -49,6 +49,9 @@ configure wave -signalnamewidth 1
 # run complete simulation
 run -all
 
+# save the SRAM content for inspection
+mem save -o SRAM.mem -f mti -data hex -addr hex -startaddress 0 -endaddress 262143 -wordsperline 8 /tb_project_v2/SRAM_component/SRAM_data
+
 destroy .structure
 destroy .signals
 destroy .source

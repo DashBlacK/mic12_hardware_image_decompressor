@@ -79,7 +79,7 @@ always_ff @ (posedge Clock or negedge Resetn) begin
 			S_US_IDLE: begin
 				if (Enable == 1'b1) begin
 					// Start receiving data from UART
-					UART_SRAM_state <= S_US_STRIP_FILE_HEADER_1;
+					UART_SRAM_state <= S_US_START_FIRST_BYTE_RECEIVE;
 					UART_rx_enable <= 1'b1;
 					SRAM_address <= 18'd0;				
 				end

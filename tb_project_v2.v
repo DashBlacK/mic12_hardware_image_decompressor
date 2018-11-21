@@ -46,6 +46,8 @@ you will get false errors, so use the original testbench instead.
 //// for milestone 3 (completed project)
 //`define INPUT_FILE_NAME "motorcycle.mic12”
 
+`include "define_state.h"
+
 module tb_project_v2;
 
 logic Clock_50;
@@ -321,10 +323,8 @@ always @ (posedge Clock_50) begin
 			$write("error: wrote value %d (%x hex) to location %d (%x hex), should be value %d (%x hex)\n",
 				uut.SRAM_write_data, uut.SRAM_write_data, uut.SRAM_address, uut.SRAM_address,
 				SRAM_ARRAY[uut.SRAM_address], SRAM_ARRAY[uut.SRAM_address]);
-			$write("sim time %t\n", $realtime);
-			$write("print some useful debug info here...\n");
+			$write("--------------------------\n");
 		//	$write("m1 state %d\n", uut.m1.state);
-			$write("...or take a look at the last few clock cycles in the waveforms that lead up to this error\n");
 			num_mismatches = num_mismatches + 1;
 			if (num_mismatches == `MAX_MISMATCHES) $stop;
 		end
@@ -337,5 +337,38 @@ always @ (posedge Clock_50) begin
 		end
 	end
 end
+
+always @ (posedge Clock_50) begin
+
+	if(uut.top_state == S_DELAY_2) begin
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		@ (posedge Clock_50);
+		//$stop;
+	end
+end
+
+/*always @ (posedge Clock_50) begin
+	if(!uut.SRAM_we_n && uut.SRAM_address == 18'h3FFFF) begin
+		//write_PPM_file;
+		$stop;
+	end
+end*/
 
 endmodule

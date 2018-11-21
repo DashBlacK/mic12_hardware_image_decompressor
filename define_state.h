@@ -1,10 +1,37 @@
 `ifndef DEFINE_STATE
 
 // This defines the states
-typedef enum logic [1:0] {
+typedef enum logic [5:0] {
 	S_IDLE,
 	S_ENABLE_UART_RX,
-	S_WAIT_UART_RX
+	S_WAIT_UART_RX,
+	S_IDLE_1,
+	S_IDLE_11,
+	S_IDLE_2,
+	S_1,
+	S_2,
+	S_3,
+	S_4,
+	S_5,
+	S_6,
+	S_7,
+	S_8,
+	S_9,
+	S_10,
+	S_11,
+	S_12,
+	S_13,
+	S_14,
+	S_15,
+	S_16,
+	S_LEADOUT_1,
+	S_LEADOUT_2,
+	S_LEADOUT_3,
+	S_LEADOUT_4,
+	S_LEADOUT_5,
+	S_LEADOUT_6,
+	S_DELAY_1,
+	S_DELAY_2
 } top_state_type;
 
 typedef enum logic [1:0] {
