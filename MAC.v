@@ -13,37 +13,21 @@ Ontario, Canada
 module MAC (
     input logic Clock_50,                   // 50 MHz clock
     input logic Resetn,
-
     input logic clear,
     input logic [31:0] operand1,
     input logic [31:0] operand2,
-    output logic [63:0] macOutput
+    output logic [63:0] accumulate,
+    output logic [63:0] multOut
 );
 
-logic [63:0] multOut;
-logic [63:0] accumulate;
-
 assign multOut = operand1 *operand2;
-assign macOutput = accumulate;
 
 always_ff @ (posedge Clock_50 or negedge Resetn) begin
-	if (Resetn == 1'b0) begin
-		accumulate <= 64'd0;
-	end else begin
-        if (clear == 1'b1) begin
-            accumulate <= 64'd0;
-        end else begin
-            accumulate <= accumulate + multOut;
-        end
-    end
-end
-
-/* always_ff @ (posedge Clock_50 or negedge Resetn) begin
-	if ((Resetn == 1'b0) | (clear == 1'b1)) begin
+	if ((Resetn == 1'b0) | (clear == 1'b0)) begin
 		accumulate <= 64'd0;
 	end else begin
         accumulate <= accumulate + multOut;
     end
-end */
+end
 
 endmodule

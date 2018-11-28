@@ -54,21 +54,67 @@
 #add wave -decimal uut/offsetCount
 
 ## Milestone 2
-add wave -unsigned uut/m1start
-add wave -unsigned uut/m2start
-add wave -unsigned uut/m3start
+#add wave -unsigned uut/m1start
+#add wave -unsigned uut/m2start
+#add wave -unsigned uut/m3start
 add wave Clock_50
-add wave uut/top_state
+#add wave uut/top_state
 add wave uut/m2_state
 add wave -divider {SRAM Control}
-add wave -unsigned uut/SRAM_address
-add wave -unsigned uut/SRAM_address_use_m2
-add wave -unsigned uut/colIndex
-add wave -unsigned uut/rowIndex
 add wave uut/SRAM_we_n
 add wave -hexadecimal uut/SRAM_write_data
 add wave -hexadecimal uut/SRAM_read_data
-add wave -divider
-add wave -unsigned uut/write_enable_a
-add wave -unsigned uut/address_a
-add wave -unsigned uut/write_data_a
+add wave -unsigned uut/SRAM_address
+
+#add wave -divider {SRAM IDCT Addressing}
+#add wave -unsigned uut/idctAddress
+#add wave -unsigned uut/m2CountEnable
+#add wave -unsigned uut/block_element_counter
+#add wave -unsigned uut/S_prime_buffer
+#add wave -unsigned uut/RowAddr
+#add wave -unsigned uut/RowBase
+#add wave -unsigned uut/RowIndex
+#add wave -unsigned uut/ColAddr
+#add wave -unsigned uut/ColBase
+#add wave -unsigned uut/ColIndex
+
+#add wave -divider {S Addr Ctr}
+#add wave -unsigned uut/s_addr_ctr
+#add wave -unsigned uut/s_element_ctr
+#add wave -unsigned uut/column_addr
+#add wave uut/s_addr_ctr_en
+
+
+add wave -divider {DP-RAM}
+add wave -hexadecimal uut/write_enable_a
+add wave -hexadecimal uut/write_enable_b
+add wave -hexadecimal uut/address_a
+add wave -hexadecimal uut/address_b
+add wave -hexadecimal uut/read_data_a
+add wave -hexadecimal uut/read_data_b
+add wave -hexadecimal uut/write_data_a
+add wave -hexadecimal uut/write_data_b
+add wave -decimal uut/sCounter
+add wave -decimal uut/wsCounter
+add wave -hexadecimal uut/sram_s_write_buf
+add wave -divider {}
+
+#add wave uut/SRAM_we_n
+#add wave -hexadecimal uut/SRAM_write_data
+#add wave -hexadecimal uut/SRAM_read_data
+#add wave -divider
+#add wave -unsigned uut/write_enable_a
+#add wave -unsigned uut/address_a
+#add wave -hexadecimal uut/S_prime_buffer
+#add wave -hexadecimal uut/SRAM_read_data
+
+add wave -divider {MAC Operations}
+add wave -decimal uut/mac_o1
+add wave -decimal uut/mac_o2
+add wave -decimal uut/mac_mult
+add wave -decimal uut/mac_acc
+add wave -hexadecimal uut/macTest
+add wave -decimal uut/mac_clear
+add wave -hexadecimal uut/bufferY
+#add wave -decimal uut/Tbuffer1
+#add wave -decimal uut/Tbuffer2

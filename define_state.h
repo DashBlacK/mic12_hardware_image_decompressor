@@ -37,17 +37,62 @@ typedef enum logic [5:0] {
 } top_state_type;
 
 // This defines the milestone 2 states
-typedef enum logic [4:0] {
+typedef enum logic [6:0] {
 	m2_IDLE,
 	m2_IDLE_1,
 	m2_IDLE_2,
-	m2_FETCH_S_prime_1,
-	m2_FETCH_S_prime_2,
-	m2_FETCH_S_prime_DELAY_1,
-	m2_FETCH_S_prime_DELAY_2,
-	m2_REQ_S_prime,
-	m2_CALC_T_1
+	m2_FETCH_S_PRIME_1,
+	m2_FETCH_S_PRIME_2,
+	m2_FETCH_S_PRIME_DELAY_1,
+	m2_FETCH_S_PRIME_DELAY_2,
+	m2_REQ_S_PRIME,
+	m2_REQ_S_PRIME_2,
+	m2_WRITE_DELAY_1,
+	m2_WRITE_DELAY_2,
+	m2_CALC_T_1,
+	m2_CALC_T_2,
+	m2_CALC_T_3,
+	m2_CALC_T_4,
+	m2_CALC_T_5,
+	m2_CALC_T_6,
+	m2_CALC_T_7,
+	m2_CALC_T_8,
+	m2_CALC_S_1,
+	m2_CALC_S_2,
+	m2_CALC_S_3,
+	m2_CALC_S_4,
+	m2_CALC_S_5,
+	m2_CALC_S_6,
+	m2_CALC_S_7,
+	m2_CALC_S_8,
+	m2_CALC_TW_1,
+	m2_CALC_TW_2,
+	m2_CALC_TW_3,
+	m2_CALC_TW_4,
+	m2_CALC_TW_5,
+	m2_CALC_TW_6,
+	m2_CALC_TW_7,
+	m2_CALC_TW_8,
+	m2_WS_DELAY_1,
+	m2_WS_DELAY_2,
+	m2_WS_1,
+	m2_WS_2,
+	m2_WS_3,
+	m2_WS_4,
+	m2_WS_5
 } m2_state_type;
+
+typedef enum logic [6:0]{
+	S_WS_IDLE,
+	S_WS_DELAY_1,
+	S_WS_DELAY_2,
+	S_WS_1,
+	S_WS_2,
+	S_WS_3,
+	S_WS_4,
+	S_WS_5,
+	S_WS_6
+}ws_state_type;
 
 // This defines the milestone 3 states
 typedef enum logic [4:0] {

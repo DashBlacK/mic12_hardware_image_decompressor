@@ -69,7 +69,7 @@ module dual_port_RAM1 (
 		altsyncram_component.clock_enable_output_b = "BYPASS",
 		altsyncram_component.indata_reg_b = "CLOCK0",
 `ifdef NO_PLI
-		altsyncram_component.init_file = "dual_port_RAM1.rif"
+		altsyncram_component.init_file = "dual_port_RAM1.hex"
 `else
 		altsyncram_component.init_file = "dual_port_RAM1.hex"
 `endif

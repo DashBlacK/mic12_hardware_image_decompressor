@@ -874,8 +874,6 @@ logic write_enable_b [2:0];
 logic [31:0] read_data_a [2:0];
 logic [31:0] read_data_b [2:0];
 
-logic [17:0] rowIndex;
-logic [17:0] colIndex;
 
 // Instantiate RAM2
 dual_port_RAM2 dual_port_RAM_inst2 (
@@ -916,67 +914,1060 @@ dual_port_RAM0 dual_port_RAM_inst0 (
 	.q_b ( read_data_b[0] )
 );
 
+logic [15:0] RowAddr;
+logic [4:0] RowBase;
+
+logic [8:0] ColAddr;
+logic [5:0] ColBase;
+
+logic [2:0] RowIndex;
+logic [2:0] ColIndex;
+
+logic [5:0] block_element_counter;
+
+assign RowAddr = {RowBase, RowIndex};
+assign ColAddr = {ColBase, ColIndex};
+
+logic idctAddrEn;
+logic fetch_IDCT_Y;
+logic m2CountEnable;
+
+assign idctAddress = 18'd76800 + (RowAddr << 8) + (RowAddr << 6) + ColAddr;
+
+// Addressing Pre-IDCT Block circuitry
+always_ff@(posedge CLOCK_50_I or negedge resetn) begin
+	if(~resetn) begin
+		ColBase <= 6'd0;
+		RowBase <= 5'd0;
+		RowIndex <= 8'd0;
+		ColIndex <= 8'd0;
+		block_element_counter <= 0;
+	end else if (m2CountEnable == 1'b1) begin
+		block_element_counter <= block_element_counter + 1;
+		ColIndex <= ColIndex + 1;
+
+		if(ColIndex == 'd7) begin
+			ColIndex <= 0;
+			RowIndex <= RowIndex + 1;
+
+			if(RowIndex == 'd7) begin
+				RowIndex <= 0;
+				ColBase <= ColBase + 1;
+			end
+		end
+
+
+		// For Y there's 40 blocks per row. For U/V There's 20 so 
+		// this constant needs to be changeable
+		if(fetch_IDCT_Y) begin
+			if(ColBase == 'd39 && ColIndex == 'd7 && RowIndex == 'd7) begin
+				RowBase <= RowBase + 1;
+				RowIndex <= 0;
+				ColBase <= 0;
+			end
+		end else begin
+			if(ColBase == 'd19 && RowIndex == 'd7) begin
+				RowBase <= RowBase + 1;
+				ColBase <= 0;
+			end else begin
+				RowBase <= 'd0;
+			end
+		end
+
+
+	end
+end
+
+assign fetch_IDCT_Y = 1'b1;
+
+//logic [17:0] SRAM_S_write_address;
+logic [17:0] s_addr_ctr;
+logic s_addr_ctr_en;
+logic [2:0] s_element_ctr;
+logic [16:0] max_addr_for_row;
+logic [16:0] column_addr;
+
+always_ff @(posedge CLOCK_50_I or negedge resetn) begin
+	if(~resetn) begin
+		s_addr_ctr <= 'd0;
+		s_element_ctr <= 'd0;
+		column_addr <= 'd0;
+		max_addr_for_row <= 'd1279;
+	end else if(s_addr_ctr_en) begin
+		
+		if(s_addr_ctr == max_addr_for_row) begin
+			max_addr_for_row <= max_addr_for_row + 'd1280;
+			column_addr <= max_addr_for_row + 'd1;
+			s_addr_ctr <= max_addr_for_row + 'd1;
+		end else begin
+			s_addr_ctr <= s_addr_ctr + 'd160;
+
+			if(s_element_ctr == 'd7) begin
+				column_addr <= column_addr + 'd1;
+				s_addr_ctr <= column_addr + 'd1;
+				s_element_ctr <= 'd0;
+			end
+		end
+		s_element_ctr <= s_element_ctr + 'd1;
+	end
+end
+
+logic [15:0] sram_write_data_m2;
+
+always_comb begin
+	if( (m2_state == m2_IDLE_1) ||
+		(m2_state == m2_IDLE_2) ||
+		(m2_state == m2_FETCH_S_PRIME_1) ||
+		(m2_state == m2_FETCH_S_PRIME_2) ||
+		(m2_state == m2_FETCH_S_PRIME_DELAY_1) ||
+		(m2_state == m2_FETCH_S_PRIME_DELAY_2) ||
+		(m2_state == m2_REQ_S_PRIME) ||
+		(m2_state == m2_CALC_T_1) ||
+		(m2_state == m2_CALC_S_1) ||
+		(m2_state == m2_CALC_S_2) ||
+		(m2_state == m2_CALC_S_3) ||
+		(m2_state == m2_CALC_S_4) ||
+		(m2_state == m2_CALC_S_5) ||
+		(m2_state == m2_CALC_S_6) ||
+		(m2_state == m2_CALC_S_7) ||
+		(m2_state == m2_CALC_S_8)) 
+		begin
+			SRAM_address_use_m2 = idctAddress;
+		end else if((m2_state == m2_WS_1) || 
+					(m2_state == m2_WS_2) || 
+					(m2_state == m2_WS_3) || 
+					(m2_state == m2_WS_4) || 
+					(m2_state == m2_WS_5) ||
+					(m2_state == m2_CALC_TW_1) ||
+					(m2_state == m2_CALC_TW_2) ||
+					(m2_state == m2_CALC_TW_3) ||
+					(m2_state == m2_CALC_TW_4) ||
+					(m2_state == m2_CALC_TW_5) ||
+					(m2_state == m2_CALC_TW_6) ||
+					(m2_state == m2_CALC_TW_7) ||
+					(m2_state == m2_CALC_TW_8)) 
+			begin
+				SRAM_address_use_m2 = s_addr_ctr;
+		end
+end
+
+// MAC Units
+logic [31:0] mac_o1[3:0];
+logic [31:0] mac_o2[3:0];
+logic [63:0] mac_mult[3:0];
+logic [63:0] mac_acc[3:0];
+logic mac_clear[3:0];
+assign mac_mult[0] = $signed(mac_o1[0]) *$signed(mac_o2[0]);
+assign mac_mult[1] = $signed(mac_o1[1]) *$signed(mac_o2[1]);
+assign mac_mult[2] = $signed(mac_o1[2]) *$signed(mac_o2[2]);
+assign mac_mult[3] = $signed(mac_o1[3]) *$signed(mac_o2[3]);
+
+always_ff@(posedge CLOCK_50_I or negedge resetn) begin
+	if ((~resetn)) begin
+		mac_acc[0] <= 64'd0;
+		mac_acc[1] <= 64'd0;
+		mac_acc[2] <= 64'd0;
+		mac_acc[3] <= 64'd0;
+	end else begin
+		if (mac_clear[0] == 1'b0) begin
+			mac_acc[0] <= $signed(mac_acc[0] + mac_mult[0]);
+		end else begin
+			mac_acc[0] <= $signed(mac_mult[0]);
+		end
+		if (mac_clear[1] == 1'b0) begin
+			mac_acc[1] <= $signed(mac_acc[1] + mac_mult[1]);
+		end else begin
+			mac_acc[1] <= $signed(mac_mult[1]);
+		end
+		if (mac_clear[2] == 1'b0) begin
+			mac_acc[2] <= $signed(mac_acc[2] + mac_mult[2]);
+		end else begin
+			mac_acc[2] <= $signed(mac_mult[2]);
+		end
+		if (mac_clear[3] == 1'b0) begin
+			mac_acc[3] <= $signed(mac_acc[3] + mac_mult[3]);
+		end else begin
+			mac_acc[3] <= $signed(mac_mult[3]);
+		end
+	end
+end
+
+logic [3:0] TcolCounter;
+logic [3:0] TrowCounter;
+logic [31:0] Tbuffer1;
+logic [31:0] Tbuffer2;
+
+logic [7:0] macTest[3:0];
+
+logic [7:0] sCounter;
+logic [7:0] wsCounter;
+
+logic firstRun;
+logic secondRun;
+logic rowTicker;
+logic colTicker;
+logic sDelay;
+
+logic [8:0] bufferY[3:0];
+
+always_comb begin
+	if (|mac_acc[0][63:48]) begin
+		macTest[0] = 8'd0;
+	end else if (mac_acc[0][31:16] > 255) begin
+		macTest[0] = 8'd255;
+	end else begin
+		macTest[0] = mac_acc[0] >>> 16;
+	end
+	if (|mac_acc[1][63:48]) begin
+		macTest[1] = 8'd0;
+	end else if (mac_acc[1][31:16] > 255) begin
+		macTest[1] = 8'd255;
+	end else begin
+		macTest[1] = mac_acc[1] >>> 16;
+	end
+	if (|mac_acc[2][63:48]) begin
+		macTest[2] = 8'd0;
+	end else if (mac_acc[2][31:16] > 255) begin
+		macTest[2] = 8'd255;
+	end else begin
+		macTest[2] = mac_acc[2] >>> 16;
+	end
+	if (|mac_acc[3][63:48]) begin
+		macTest[3] = 8'd0;
+	end else if (mac_acc[3][31:16] > 255) begin
+		macTest[3] = 8'd255;
+	end else begin
+		macTest[3] = mac_acc[3] >>> 16;
+	end
+end
+
+logic fetchSComp;
+logic [4:0] DEBUG_CsCounter;
+logic [31:0] sram_s_write_buf;
+logic updateBuff;
+logic TWfirstRun;
+logic switchState;
+logic nov26647am;
+
+// Writing S' to DP-RAM
 always @(posedge CLOCK_50_I or negedge resetn) begin
 	if (~resetn) begin
-		m2done <= 1'b0;
+		address_a[2] <= 7'd127;
+		write_enable_a[2] <= 1'b0;
+		write_enable_b[2] <= 1'b0;
+		s_addr_ctr_en <= 1'b0;
+		S_prime_buffer <= 16'd0;
 		SRAM_use_m2 <= 1'b0;
-		idctAddress <= 18'd76800;
-		address_a[2] <= 7'd0;
-		write_enable_a[2] <= 1'b1;
-		rowIndex <= 18'd0;
-		colIndex <= 18'd0;
-		SRAM_address_use_m2 <= 18'd0;
+		sram_write_data_m2 <= 'd0;
+		m2CountEnable <= 1'b0;
+		firstRun <= 1'b0;
+		mac_clear[0] <= 1'b0;
+		mac_clear[1] <= 1'b0;
+		mac_clear[2] <= 1'b0;
+		mac_clear[3] <= 1'b0;
+		mac_o1[0] <= 'd0;
+		mac_o1[1] <= 'd0;
+		mac_o1[2] <= 'd0;
+		mac_o1[3] <= 'd0;
+		mac_o2[0] <= 'd0;
+		mac_o2[1] <= 'd0;
+		mac_o2[2] <= 'd0; 
+		mac_o2[3] <= 'd0;
+		sram_s_write_buf <= 'd0;
+		TcolCounter <= 'd0;
+		TrowCounter <= 'd0;
+		Tbuffer1 <= 'd0;
+		Tbuffer2 <= 'd0;
+		secondRun <= 1'b0;
+		rowTicker <= 1'b0;
+		colTicker <= 1'b0;
+		sCounter <= 'd0;
+		sDelay <= 1'b0;
+		fetchSComp <= 1'b0;
+		DEBUG_CsCounter <= 'd0;
+		updateBuff <= 1'b0;
+		TWfirstRun <= 1'b0;
+		wsCounter <= 1'b0;
+		switchState <= 1'b0;
 	end else if (m2start == 1'b1) begin
-		case (m2_state)
+		case(m2_state)
 		m2_IDLE: begin
-			//m2done <= 1'b1;
-			SRAM_address_use_m2 <= idctAddress;
-			colIndex <= colIndex + 1;
+			m2CountEnable <= 1'b1;
 			m2_state <= m2_IDLE_1;
 		end
 		m2_IDLE_1: begin
-			SRAM_address_use_m2 <= idctAddress + colIndex;
-			colIndex <= colIndex + 1;
 			m2_state <= m2_IDLE_2;
 		end
 		m2_IDLE_2: begin
-			SRAM_address_use_m2 <= idctAddress + colIndex;
-			colIndex <= colIndex + 1;
-			m2_state <= m2_FETCH_S_prime_1;
+			//m2CountEnable <= 1'b1;
+			m2_state <= m2_FETCH_S_PRIME_1;
+		end
+		m2_FETCH_S_PRIME_1: begin
 			write_enable_a[2] <= 1'b1;
-		end
-		m2_FETCH_S_prime_1: begin
-			SRAM_address_use_m2 <= idctAddress + colIndex + rowIndex;
-			colIndex <= colIndex + 1;
 			S_prime_buffer <= SRAM_read_data;
-			m2_state <= m2_FETCH_S_prime_2;
-			if (colIndex > 6) begin
-				rowIndex <= rowIndex + 320;
-				colIndex <= 0;
-			end
+			m2_state <= m2_FETCH_S_PRIME_2;
+			/* if(block_element_counter == 'd63) begin
+				m2CountEnable <= 1'b0;
+			end */
 		end
-		m2_FETCH_S_prime_2: begin
-			colIndex <= colIndex + 1;
-			write_data_a[2] <= {{S_prime_buffer},{SRAM_read_data}};
+		m2_FETCH_S_PRIME_2: begin
+			write_enable_a[2] <= 1'b0;
 			address_a[2] <= address_a[2] + 1;
-			if ((rowIndex > 2240)) begin
-				m2_state <= m2_FETCH_S_prime_DELAY_1;
+			//S_prime_buffer <= SRAM_read_data;
+			write_data_a[2] = {S_prime_buffer, SRAM_read_data};
+			if(block_element_counter < 'd63) begin
+				m2_state <= m2_FETCH_S_PRIME_1;
 			end else begin
-				SRAM_address_use_m2 <= idctAddress + colIndex + rowIndex;
-				m2_state <= m2_FETCH_S_prime_1;
+				m2_state <= m2_FETCH_S_PRIME_DELAY_1;
+				m2CountEnable <= 1'b0;
 			end
 		end
-		m2_FETCH_S_prime_DELAY_1: begin
-			m2_state <= m2_FETCH_S_prime_DELAY_2;
-		end
-		m2_FETCH_S_prime_DELAY_2: begin
-			write_data_a[2] <= {{S_prime_buffer},{SRAM_read_data}};
+		m2_FETCH_S_PRIME_DELAY_1: begin
+			S_prime_buffer <= SRAM_read_data;
 			address_a[2] <= address_a[2] + 1;
-			m2_state <= m2_REQ_S_prime;
+			m2_state <= m2_FETCH_S_PRIME_DELAY_2;
 		end
-		m2_REQ_S_prime: begin
+		m2_FETCH_S_PRIME_DELAY_2: begin
+			write_enable_a[2] <= 1'b0;
+			write_enable_b[2] <= 1'b0;
+			write_enable_a[1] <= 1'b0;
+			write_enable_b[1] <= 1'b0;
+			write_enable_a[0] <= 1'b0;
+			write_enable_b[0] <= 1'b0;
+
+			address_a[2] <= 'd0; // S0-1
+			address_b[2] <= 'd1; // S2-3
+
+			address_a[1] <= 'd0; // C0-1
+			address_b[1] <= 'd1; // C2-3
+
+			address_a[0] <= 'd126; // T0
+			address_b[0] <= 'd127; // T1
+
+			m2_state <= m2_REQ_S_PRIME;			// Set up for T calculations
+		end
+		m2_REQ_S_PRIME: begin
+			m2_state <= m2_CALC_T_1;
+			address_a[1] <= address_a[1] + 'd4; // C8-9
+			address_b[1] <= address_b[1] + 'd4; // C10-11
+			wsCounter <= 1'b0;
 		end
 		m2_CALC_T_1: begin
+			write_data_a[0] <= $signed(Tbuffer1);
+			write_data_b[0] <= $signed(Tbuffer2);
+			address_a[0] <= address_a[0] + 'd2;
+			address_b[0] <= address_b[0] + 'd2;
+			mac_clear[0] <= 1'b0;
+			mac_clear[1] <= 1'b0;
+			mac_clear[2] <= 1'b0;
+			mac_clear[3] <= 1'b0;
+			mac_o1[0] <= $signed(read_data_a[2][31:16]); // S0
+			mac_o1[1] <= $signed(read_data_a[2][31:16]); // S0
+			mac_o1[2] <= $signed(read_data_a[2][31:16]); // S0
+			mac_o1[3] <= $signed(read_data_a[2][31:16]); // S0
+
+			mac_o2[0] <= $signed(read_data_a[1][31:16]); // C0
+			mac_o2[1] <= $signed(read_data_a[1][15:0]); // C1
+			mac_o2[2] <= $signed(read_data_b[1][31:16]); // C2
+			mac_o2[3] <= $signed(read_data_b[1][15:0]); // C3
+			address_a[1] <= address_a[1] + 'd4; // C16-17
+			address_b[1] <= address_b[1] + 'd4; // C18-19
+			m2_state <= m2_CALC_T_2;
+			end
+		m2_CALC_T_2: begin
+			if (sCounter == 'd32) begin
+				address_a[0] <= 'd0; // T0
+				// address_b[0] <= 'd8; // T8
+				address_a[1] <= 'd0; // C0-1
+				address_b[1] <= 'd1; // C2-3
+				address_a[2] <= 'd127; // FOR S PRIME FETCH
+				address_b[2] <= 'd111;
+				/*mac_clear[0] <= 1'b1;
+				mac_clear[1] <= 1'b1;
+				mac_clear[2] <= 1'b1;
+				mac_clear[3] <= 1'b1;*/
+				sCounter <= 'd0;
+				firstRun <= 1'b0;
+				rowTicker <= 1'b0;
+				colTicker <= 1'b0;
+				m2_state <= m2_CALC_S_1;
+				m2CountEnable <= 1'b0;
+				fetchSComp <= 1'b0;
+			end else begin
+				
+				mac_o1[0] <= $signed(read_data_a[2][15:0]); // S1
+				mac_o1[1] <= $signed(read_data_a[2][15:0]); // S1
+				mac_o1[2] <= $signed(read_data_a[2][15:0]); // S1
+				mac_o1[3] <= $signed(read_data_a[2][15:0]); // S1
+
+				mac_o2[0] <= $signed(read_data_a[1][31:16]); // C8
+				mac_o2[1] <= $signed(read_data_a[1][15:0]); // C9
+				mac_o2[2] <= $signed(read_data_b[1][31:16]); // C10
+				mac_o2[3] <= $signed(read_data_b[1][15:0]); // C11
+
+				address_a[1] <= address_a[1] + 'd4; // C24-25
+				address_b[1] <= address_b[1] + 'd4; // C26-27
+
+				m2_state <= m2_CALC_T_3;
+			end
+			write_enable_a[0] <= 1'b0;
+			write_enable_b[0] <= 1'b0;
+			
+		end
+		m2_CALC_T_3: begin
+			mac_o1[0] <= $signed(read_data_b[2][31:16]); // S2
+			mac_o1[1] <= $signed(read_data_b[2][31:16]); // S2
+			mac_o1[2] <= $signed(read_data_b[2][31:16]); // S2
+			mac_o1[3] <= $signed(read_data_b[2][31:16]); // S2
+
+			mac_o2[0] <= $signed(read_data_a[1][31:16]); // C16
+			mac_o2[1] <= $signed(read_data_a[1][15:0]); // C17
+			mac_o2[2] <= $signed(read_data_b[1][31:16]); // C18
+			mac_o2[3] <= $signed(read_data_b[1][15:0]); // C19
+
+			address_a[1] <= address_a[1] + 'd4; // C32-33
+			address_b[1] <= address_b[1] + 'd4; // C34-35
+
+			address_a[2] <= address_a[2] + 'd2; // S01 -> S45
+			address_b[2] <= address_b[2] + 'd2; // S23 -> S67
+
+			m2_state <= m2_CALC_T_4;
+		end
+		m2_CALC_T_4: begin
+
+			mac_o1[0] <= $signed(read_data_b[2][15:0]); // S3
+			mac_o1[1] <= $signed(read_data_b[2][15:0]); // S3
+			mac_o1[2] <= $signed(read_data_b[2][15:0]); // S3
+			mac_o1[3] <= $signed(read_data_b[2][15:0]); // S3
+
+			mac_o2[0] <= $signed(read_data_a[1][31:16]); // C24
+			mac_o2[1] <= $signed(read_data_a[1][15:0]); // C25
+			mac_o2[2] <= $signed(read_data_b[1][31:16]); // C26
+			mac_o2[3] <= $signed(read_data_b[1][15:0]); // C27
+
+			address_a[1] <= address_a[1] + 'd4; // C40-41
+			address_b[1] <= address_b[1] + 'd4; // C42-43
+
+			m2_state <= m2_CALC_T_5;
+		end
+		m2_CALC_T_5: begin
+			mac_o1[0] <= $signed(read_data_a[2][31:16]); // S4
+			mac_o1[1] <= $signed(read_data_a[2][31:16]); // S4
+			mac_o1[2] <= $signed(read_data_a[2][31:16]); // S4
+			mac_o1[3] <= $signed(read_data_a[2][31:16]); // S4
+
+			mac_o2[0] <= $signed(read_data_a[1][31:16]); // C32
+			mac_o2[1] <= $signed(read_data_a[1][15:0]); // C33
+			mac_o2[2] <= $signed(read_data_b[1][31:16]); // C34
+			mac_o2[3] <= $signed(read_data_b[1][15:0]); // C35
+
+			address_a[1] <= address_a[1] + 'd4; // C48-49
+			address_b[1] <= address_b[1] + 'd4; // C50-51
+
+			m2_state <= m2_CALC_T_6;
+		end
+		m2_CALC_T_6: begin
+			mac_o1[0] <= $signed(read_data_a[2][15:0]); // S5
+			mac_o1[1] <= $signed(read_data_a[2][15:0]); // S5
+			mac_o1[2] <= $signed(read_data_a[2][15:0]); // S5
+			mac_o1[3] <= $signed(read_data_a[2][15:0]); // S5
+
+			mac_o2[0] <= $signed(read_data_a[1][31:16]); // C40
+			mac_o2[1] <= $signed(read_data_a[1][15:0]); // C41
+			mac_o2[2] <= $signed(read_data_b[1][31:16]); // C42
+			mac_o2[3] <= $signed(read_data_b[1][15:0]); // C43
+
+			address_a[1] <= address_a[1] + 'd4; // C56-57
+			address_b[1] <= address_b[1] + 'd4; // C58-59
+
+			m2_state <= m2_CALC_T_7;
+		end
+		m2_CALC_T_7: begin
+			mac_o1[0] <= $signed(read_data_b[2][31:16]); // S6
+			mac_o1[1] <= $signed(read_data_b[2][31:16]); // S6
+			mac_o1[2] <= $signed(read_data_b[2][31:16]); // S6
+			mac_o1[3] <= $signed(read_data_b[2][31:16]); // S6
+
+			mac_o2[0] <= $signed(read_data_a[1][31:16]); // C48
+			mac_o2[1] <= $signed(read_data_a[1][15:0]); // C49
+			mac_o2[2] <= $signed(read_data_b[1][31:16]); // C50
+			mac_o2[3] <= $signed(read_data_b[1][15:0]); // C51
+			if (rowTicker == 1'b0) begin
+				address_a[1] <= 'd2; // C4-5
+				address_b[1] <= 'd3; // C6-7
+				rowTicker <= 1'b1;
+			end else begin
+				address_a[1] <= 'd0;
+				address_b[1] <= 'd1;
+				rowTicker <= 1'b0;
+			end
+			if (colTicker == 1'b0) begin
+				colTicker <= 1'b1;
+				address_a[2] <= address_a[2] - 'd2;
+				address_b[2] <= address_b[2] - 'd2;
+			end else begin
+				colTicker <= 1'b0;
+				address_a[2] <= address_a[2] + 'd2;
+				address_b[2] <= address_b[2] + 'd2;
+			end
+			m2_state <= m2_CALC_T_8;
+		end
+		m2_CALC_T_8: begin
+			mac_o1[0] <= $signed(read_data_b[2][15:0]); // S7
+			mac_o1[1] <= $signed(read_data_b[2][15:0]); // S7
+			mac_o1[2] <= $signed(read_data_b[2][15:0]); // S7
+			mac_o1[3] <= $signed(read_data_b[2][15:0]); // S7
+
+			mac_o2[0] <= $signed(read_data_a[1][31:16]); // C56
+			mac_o2[1] <= $signed(read_data_a[1][15:0]); // C57
+			mac_o2[2] <= $signed(read_data_b[1][31:16]); // C58
+			mac_o2[3] <= $signed(read_data_b[1][15:0]); // C59
+
+			address_a[1] <= address_a[1] + 'd4; // C12-13
+			address_b[1] <= address_b[1] + 'd4; // C14-15
+			write_enable_a[0] <= 1'b1;
+			write_enable_b[0] <= 1'b1;
+			write_data_a[0] <= $signed(mac_acc[0]) >>> 8;
+			write_data_b[0] <= $signed(mac_acc[1]) >>> 8;
+			Tbuffer1 <= $signed(mac_acc[2]) >>> 8;
+			Tbuffer2 <= $signed(mac_acc[3]) >>> 8;
+			mac_clear[0] <= 1'b1;
+			mac_clear[1] <= 1'b1;
+			mac_clear[2] <= 1'b1;
+			mac_clear[3] <= 1'b1;
+			sCounter <= sCounter + 'd2;
+			if (firstRun == 1'b0) begin
+				firstRun <= 1'b1;
+			end else begin
+				address_a[0] <= address_a[0] + 'd2;
+				address_b[0] <= address_b[0] + 'd2;
+			end
+			m2_state <= m2_CALC_T_1;
+		end
+		m2_CALC_S_1: begin
+			
+			write_enable_b[2] <= 1'b0;
+			if (nov26647am == 1'b0) begin
+				mac_clear[0] <= 1'b0;
+				mac_clear[1] <= 1'b0;
+				mac_clear[2] <= 1'b0;
+				mac_clear[3] <= 1'b0;
+			end
+			mac_o1[0] <= $signed(read_data_a[1][31:16]); // C0
+			mac_o1[1] <= $signed(read_data_a[1][15:0]); // C1
+			mac_o1[2] <= $signed(read_data_b[1][31:16]); // C2
+			mac_o1[3] <= $signed(read_data_b[1][15:0]); // C3
+			mac_o2[0] <= $signed(read_data_a[0]); // T0
+			mac_o2[1] <= $signed(read_data_a[0]); // T0
+			mac_o2[2] <= $signed(read_data_a[0]); // T0
+			mac_o2[3] <= $signed(read_data_a[0]); // T0
+			address_a[0] <= address_a[0] + 'd8; // T8
+			address_a[1] <= address_a[1] + 'd4; // C8-9
+			address_b[1] <= address_b[1] + 'd4; // C10-11
+			if (sCounter == 'd32) begin
+				m2_state <= m2_REQ_S_PRIME_2;
+				
+				// SRAM WRITE STUFF
+				address_a[2] <= 'h70;
+				// END SRAM WRITE STUFF
+				
+				//address_a[2] <= 'd0;
+				address_b[2] <= 'd0;
+				address_a[1] <= 'd0;
+				address_b[1] <= 'd1;
+				DEBUG_CsCounter <= DEBUG_CsCounter + 'd1;
+			end else begin
+				m2_state <= m2_CALC_S_2;
+				// S' fetch
+				if (fetchSComp == 1'b0) begin
+					m2CountEnable <= 1'b1;
+				end
+
+			end
+
+			
+		end
+		m2_CALC_S_2: begin			
+			mac_o1[0] <= $signed(read_data_a[1][31:16]); // C8
+			mac_o1[1] <= $signed(read_data_a[1][15:0]); // C9
+			mac_o1[2] <= $signed(read_data_b[1][31:16]); // C10
+			mac_o1[3] <= $signed(read_data_b[1][15:0]); // C11
+			mac_o2[0] <= $signed(read_data_a[0]); // T8
+			mac_o2[1] <= $signed(read_data_a[0]); // T8
+			mac_o2[2] <= $signed(read_data_a[0]); // T8
+			mac_o2[3] <= $signed(read_data_a[0]); // T8
+			address_a[0] <= address_a[0] + 'd8; // T16
+			address_a[1] <= address_a[1] + 'd4; // C16-17
+			address_b[1] <= address_b[1] + 'd4; // C18-19
+			write_enable_a[2] <= 1'b0;
+			write_enable_b[2] <= 1'b0;
+			mac_clear[0] <= 1'b1;
+			mac_clear[1] <= 1'b1;
+			mac_clear[2] <= 1'b1;
+			mac_clear[3] <= 1'b1;
+			write_enable_b[2] <= 1'b1;
+			write_data_b[2] <= {{macTest[0]},{macTest[1]},{macTest[2]},{macTest[3]}};
+			sCounter <= sCounter + 'd2;
+
+			m2_state <= m2_CALC_S_3;
+		end
+		m2_CALC_S_3: begin
+			write_enable_b[2] <= 1'b0;
+			address_b[2] <= address_b[2] + 'd1;
+			mac_o1[0] <= $signed(read_data_a[1][31:16]); // C16
+			mac_o1[1] <= $signed(read_data_a[1][15:0]); // C17
+			mac_o1[2] <= $signed(read_data_b[1][31:16]); // C18
+			mac_o1[3] <= $signed(read_data_b[1][15:0]); // C19
+			mac_o2[0] <= $signed(read_data_a[0]); // T16
+			mac_o2[1] <= $signed(read_data_a[0]); // T16
+			mac_o2[2] <= $signed(read_data_a[0]); // T16
+			mac_o2[3] <= $signed(read_data_a[0]); // T16
+			address_a[0] <= address_a[0] + 'd8; // T24
+			address_a[1] <= address_a[1] + 'd4; // C24-25
+			address_b[1] <= address_b[1] + 'd4; // C26-27
+			mac_clear[0] <= 1'b0;
+			mac_clear[1] <= 1'b0;
+			mac_clear[2] <= 1'b0;
+			mac_clear[3] <= 1'b0;
+			m2_state <= m2_CALC_S_4;
+		end
+		m2_CALC_S_4: begin
+
+			mac_o1[0] <= $signed(read_data_a[1][31:16]); // C24
+			mac_o1[1] <= $signed(read_data_a[1][15:0]); // C25
+			mac_o1[2] <= $signed(read_data_b[1][31:16]); // C26
+			mac_o1[3] <= $signed(read_data_b[1][15:0]); // C27
+
+			mac_o2[0] <= $signed(read_data_a[0]); // T24
+			mac_o2[1] <= $signed(read_data_a[0]); // T24
+			mac_o2[2] <= $signed(read_data_a[0]); // T24
+			mac_o2[3] <= $signed(read_data_a[0]); // T24
+			
+			address_a[0] <= address_a[0] + 'd8; // T32
+			address_a[1] <= address_a[1] + 'd4; // C32-33
+			address_b[1] <= address_b[1] + 'd4; // C34-35
+
+			// S' fetch
+			S_prime_buffer <= SRAM_read_data;
+
+			m2_state <= m2_CALC_S_5;
+		end
+		m2_CALC_S_5: begin
+			address_a[2] <= address_a[2] + 1;
+			mac_o1[0] <= $signed(read_data_a[1][31:16]); // C32
+			mac_o1[1] <= $signed(read_data_a[1][15:0]); // C33
+			mac_o1[2] <= $signed(read_data_b[1][31:16]); // C34
+			mac_o1[3] <= $signed(read_data_b[1][15:0]); // C35
+			mac_o2[0] <= $signed(read_data_a[0]); // T32
+			mac_o2[1] <= $signed(read_data_a[0]); // T32
+			mac_o2[2] <= $signed(read_data_a[0]); // T32
+			mac_o2[3] <= $signed(read_data_a[0]); // T32
+			address_a[0] <= address_a[0] + 'd8; // T40
+			address_a[1] <= address_a[1] + 'd4; // C40-41
+			address_b[1] <= address_b[1] + 'd4; // C42-43
+
+			// S' fetch
+			write_enable_a[2] <= 1'b1;
+			write_data_a[2] <= {S_prime_buffer, SRAM_read_data};
+			address_a[2] <= address_a[2] + 1;
+			m2CountEnable <= 1'b0;
+
+			m2_state <= m2_CALC_S_6;
+		end
+		m2_CALC_S_6: begin
+			mac_o1[0] <= $signed(read_data_a[1][31:16]); // C40
+			mac_o1[1] <= $signed(read_data_a[1][15:0]); // C41
+			mac_o1[2] <= $signed(read_data_b[1][31:16]); // C42
+			mac_o1[3] <= $signed(read_data_b[1][15:0]); // C43
+			mac_o2[0] <= $signed(read_data_a[0]); // T40
+			mac_o2[1] <= $signed(read_data_a[0]); // T40
+			mac_o2[2] <= $signed(read_data_a[0]); // T40
+			mac_o2[3] <= $signed(read_data_a[0]); // T40
+			address_a[0] <= address_a[0] + 'd8; // T48
+			address_a[1] <= address_a[1] + 'd4; // C48-49
+			address_b[1] <= address_b[1] + 'd4; // C50-51
+
+			// S' fetch
+			S_prime_buffer <= SRAM_read_data;
+			write_enable_a[2] <= 1'b0;
+
+			m2_state <= m2_CALC_S_7;
+		end
+		m2_CALC_S_7: begin
+			mac_o1[0] <= $signed(read_data_a[1][31:16]); // C48
+			mac_o1[1] <= $signed(read_data_a[1][15:0]); // C49
+			mac_o1[2] <= $signed(read_data_b[1][31:16]); // C50
+			mac_o1[3] <= $signed(read_data_b[1][15:0]); // C51
+
+			mac_o2[0] <= $signed(read_data_a[0]); // T48
+			mac_o2[1] <= $signed(read_data_a[0]); // T48
+			mac_o2[2] <= $signed(read_data_a[0]); // T48
+			mac_o2[3] <= $signed(read_data_a[0]); // T48
+			
+			address_a[0] <= address_a[0] + 'd8; // T56
+			address_a[1] <= address_a[1] + 'd4; // C56-57
+			address_b[1] <= address_b[1] + 'd4; // C58-59
+
+			// S' fetch
+			write_data_a[2] <= {S_prime_buffer, SRAM_read_data};
+			address_a[2] <= address_a[2] + 1;
+			write_enable_a[2] <= 1'b1;
+
+			m2_state <= m2_CALC_S_8;
+		end
+		m2_CALC_S_8: begin
+			// S' fetch
+			write_enable_a[2] <= 1'b0;
+
+			mac_o1[0] <= $signed(read_data_a[1][31:16]); // C56
+			mac_o1[1] <= $signed(read_data_a[1][15:0]); // C57
+			mac_o1[2] <= $signed(read_data_b[1][31:16]); // C58
+			mac_o1[3] <= $signed(read_data_b[1][15:0]); // C59
+
+			mac_o2[0] <= $signed(read_data_a[0]); // T56
+			mac_o2[1] <= $signed(read_data_a[0]); // T56
+			mac_o2[2] <= $signed(read_data_a[0]); // T56
+			mac_o2[3] <= $signed(read_data_a[0]); // T56
+			
+			if (rowTicker == 1'b0) begin
+				address_a[1] <= 'd2; // C0-1
+				address_b[1] <= 'd3; // C2-3
+				rowTicker <= 1'b1;
+			end else begin
+				address_a[1] <= 'd0; // C4-5
+				address_b[1] <= 'd1; // C6-7
+				rowTicker <= 1'b0;
+			end
+			if (colTicker == 1'b0) begin
+				colTicker <= 1'b1;
+				address_a[0] <= address_a[0] - 'd56;
+			end else begin
+				colTicker <= 1'b0;
+				address_a[0] <= address_a[0] - 'd55;
+			end
+
+			m2_state <= m2_CALC_S_1;
+		end
+		m2_REQ_S_PRIME_2: begin
+			mac_clear[0] <= 1'b1;
+			mac_clear[1] <= 1'b1;
+			mac_clear[2] <= 1'b1;
+			mac_clear[3] <= 1'b1;
+			m2_state <= m2_CALC_TW_1;
+			TWfirstRun <= 1'b0;
+			address_a[1] <= address_a[1] + 'd4; // C8-9
+			address_b[1] <= address_b[1] + 'd4; // C10-11
+			//address_b[2] <= address_b[2] + 'd1;
+			address_a[0] <= 'd126; // T0
+			address_b[0] <= 'd127; // T1
+			sCounter <= 'd0;
+
+			// SRAM WRITE STUFF
+			address_a[2] <= address_a[2] + 'd2; // 72
+			
+
+		end
+		m2_CALC_TW_1: begin
+
+			// SRAM WRITE STUFF
+			if (TWfirstRun == 1'b0) begin
+				sram_s_write_buf <= read_data_a[2]; // 70 data
+				TWfirstRun <= 1'b1;
+			end
+			// END SRAM STUFF
+
+			write_data_a[0] <= $signed(Tbuffer1);
+			write_data_b[0] <= $signed(Tbuffer2);
+			
+			address_a[0] <= address_a[0] + 'd2;
+			address_b[0] <= address_b[0] + 'd2;
+			mac_clear[0] <= 1'b0;
+			mac_clear[1] <= 1'b0;
+			mac_clear[2] <= 1'b0;
+			mac_clear[3] <= 1'b0;
+			mac_o1[0] <= $signed(read_data_b[2][31:16]); // S0
+			mac_o1[1] <= $signed(read_data_b[2][31:16]); // S0
+			mac_o1[2] <= $signed(read_data_b[2][31:16]); // S0
+			mac_o1[3] <= $signed(read_data_b[2][31:16]); // S0
+
+			mac_o2[0] <= $signed(read_data_a[1][31:16]); // C0ws
+			mac_o2[1] <= $signed(read_data_a[1][15:0]); // C1
+			mac_o2[2] <= $signed(read_data_b[1][31:16]); // C2
+			mac_o2[3] <= $signed(read_data_b[1][15:0]); // C3
+
+			address_b[2] <= address_b[2] + 'd1;
+
+			if(sCounter == 'd32) begin 
+				address_a[2] <= 'h70; // Request first 4 S values (stored in 1 mem location)
+			end
+			address_a[1] <= address_a[1] + 'd4; // C16-17
+			address_b[1] <= address_b[1] + 'd4; // C18-19
+			m2_state <= m2_CALC_TW_2;
+			end
+		m2_CALC_TW_2: begin
+			// SRAM WRITE STUFF
+			if (wsCounter < 32) begin
+				s_addr_ctr_en <= 1'b1;
+				SRAM_use_m2 <= 1'b1;
+			end
+			sram_write_data_m2 <= {sram_s_write_buf[31:24], read_data_a[2][31:24]};
+			wsCounter <= wsCounter + 'd1;
+			
+			// END SRAM WRITE STUFF
+
+			if (sCounter == 'd32) begin
+				address_a[0] <= 'd0; // T0
+				// address_b[0] <= 'd8; // T8
+				address_a[1] <= 'd0; // C0-1
+				address_b[1] <= 'd1; // C2-3
+				//address_a[2] <= address_a[2] + 'd2; // Request first 4 S values (stored in 1 mem location)
+				address_b[2] <= 'd111;
+				sCounter <= 'd0;
+				firstRun <= 1'b0;
+				rowTicker <= 1'b0;
+				colTicker <= 1'b0;
+				m2_state <= m2_CALC_S_1;
+				m2CountEnable <= 1'b0;
+				fetchSComp <= 1'b0;
+				mac_clear[0] <= 1'b1;
+				mac_clear[1] <= 1'b1;
+				mac_clear[2] <= 1'b1;
+				mac_clear[3] <= 1'b1;
+
+				//address_a[2] <= 'd127; // FOR S PRIME FETCH
+				address_b[2] <= 'd111;
+				
+				address_a[2] <= 'd127;
+				wsCounter <= 'd0;
+				m2_state <= m2_CALC_S_1;
+			end else begin			
+				
+				mac_o1[0] <= $signed(read_data_b[2][15:0]); // S1
+				mac_o1[1] <= $signed(read_data_b[2][15:0]); // S1
+				mac_o1[2] <= $signed(read_data_b[2][15:0]); // S1
+				mac_o1[3] <= $signed(read_data_b[2][15:0]); // S1
+
+				mac_o2[0] <= $signed(read_data_a[1][31:16]); // C8
+				mac_o2[1] <= $signed(read_data_a[1][15:0]); // C9
+				mac_o2[2] <= $signed(read_data_b[1][31:16]); // C10
+				mac_o2[3] <= $signed(read_data_b[1][15:0]); // C11
+
+				address_a[1] <= address_a[1] + 'd4; // C24-25
+				address_b[1] <= address_b[1] + 'd4; // C26-27
+
+				//address_b[2] <= address_b[2] + 'd1;
+
+				m2_state <= m2_CALC_TW_3;
+			end
+			write_enable_a[0] <= 1'b0;
+			write_enable_b[0] <= 1'b0;
+			
+		end
+		m2_CALC_TW_3: begin
+			// SRAM WRITE STUFF
+			sram_write_data_m2 <= {sram_s_write_buf[23:16], read_data_a[2][23:16]};
+			wsCounter <= wsCounter + 'd1;
+			// END SRAM WRITE STUFF
+
+			mac_o1[0] <= $signed(read_data_b[2][31:16]); // S2
+			mac_o1[1] <= $signed(read_data_b[2][31:16]); // S2
+			mac_o1[2] <= $signed(read_data_b[2][31:16]); // S2
+			mac_o1[3] <= $signed(read_data_b[2][31:16]); // S2
+
+			mac_o2[0] <= $signed(read_data_a[1][31:16]); // C16
+			mac_o2[1] <= $signed(read_data_a[1][15:0]); // C17
+			mac_o2[2] <= $signed(read_data_b[1][31:16]); // C18
+			mac_o2[3] <= $signed(read_data_b[1][15:0]); // C19
+
+			address_a[1] <= address_a[1] + 'd4; // C32-33
+			address_b[1] <= address_b[1] + 'd4; // C34-35
+
+			address_b[2] <= address_b[2] + 'd1;
+
+
+			m2_state <= m2_CALC_TW_4;
+		end
+		m2_CALC_TW_4: begin
+			// SRAM WRITE STUFF
+			if (secondRun == 1'b0) begin
+				address_a[2] <= address_a[2] - 'd1;
+				secondRun <= 1'b1;
+				updateBuff <= 1'b1;
+			end else begin
+				address_a[2] <= address_a[2] + 'd1;
+				secondRun <= 1'b0;
+				
+			end
+			sram_write_data_m2 <= {sram_s_write_buf[15:8], read_data_a[2][15:8]};
+			wsCounter <= wsCounter + 'd1;
+			
+			// END SRAM WRITE STUFF
+
+			mac_o1[0] <= $signed(read_data_b[2][15:0]); // S3
+			mac_o1[1] <= $signed(read_data_b[2][15:0]); // S3
+			mac_o1[2] <= $signed(read_data_b[2][15:0]); // S3
+			mac_o1[3] <= $signed(read_data_b[2][15:0]); // S3
+
+			mac_o2[0] <= $signed(read_data_a[1][31:16]); // C24
+			mac_o2[1] <= $signed(read_data_a[1][15:0]); // C25
+			mac_o2[2] <= $signed(read_data_b[1][31:16]); // C26
+			mac_o2[3] <= $signed(read_data_b[1][15:0]); // C27
+
+			address_a[1] <= address_a[1] + 'd4; // C40-41
+			address_b[1] <= address_b[1] + 'd4; // C42-43
+
+			m2_state <= m2_CALC_TW_5;
+		end
+		m2_CALC_TW_5: begin
+			// SRAM WRITE STUFF
+			address_a[2] <= address_a[2] + 'd2;
+			
+			sram_write_data_m2 <= {sram_s_write_buf[7:0], read_data_a[2][7:0]};
+			wsCounter <= wsCounter + 'd1;
+			// END SRAM WRITE STUFF
+
+			mac_o1[0] <= $signed(read_data_b[2][31:16]); // S4
+			mac_o1[1] <= $signed(read_data_b[2][31:16]); // S4
+			mac_o1[2] <= $signed(read_data_b[2][31:16]); // S4
+			mac_o1[3] <= $signed(read_data_b[2][31:16]); // S4
+
+			mac_o2[0] <= $signed(read_data_a[1][31:16]); // C32
+			mac_o2[1] <= $signed(read_data_a[1][15:0]); // C33
+			mac_o2[2] <= $signed(read_data_b[1][31:16]); // C34
+			mac_o2[3] <= $signed(read_data_b[1][15:0]); // C35
+
+			address_a[1] <= address_a[1] + 'd4; // C48-49
+			address_b[1] <= address_b[1] + 'd4; // C50-51
+
+			address_b[2] <= address_b[2] + 'd1;
+
+			m2_state <= m2_CALC_TW_6;
+		end
+		m2_CALC_TW_6: begin
+			// SRAM WRITE STUFF
+			sram_s_write_buf <= read_data_a[2];
+			SRAM_use_m2 <= 1'b0;
+			s_addr_ctr_en <= 1'b0;
+			// END SRAM WRITE STUFF
+
+			mac_o1[0] <= $signed(read_data_b[2][15:0]); // S5
+			mac_o1[1] <= $signed(read_data_b[2][15:0]); // S5
+			mac_o1[2] <= $signed(read_data_b[2][15:0]); // S5
+			mac_o1[3] <= $signed(read_data_b[2][15:0]); // S5
+
+			mac_o2[0] <= $signed(read_data_a[1][31:16]); // C40
+			mac_o2[1] <= $signed(read_data_a[1][15:0]); // C41
+			mac_o2[2] <= $signed(read_data_b[1][31:16]); // C42
+			mac_o2[3] <= $signed(read_data_b[1][15:0]); // C43
+
+			address_a[1] <= address_a[1] + 'd4; // C56-57
+			address_b[1] <= address_b[1] + 'd4; // C58-59
+
+			m2_state <= m2_CALC_TW_7;
+		end
+		m2_CALC_TW_7: begin
+			mac_o1[0] <= $signed(read_data_b[2][31:16]); // S6
+			mac_o1[1] <= $signed(read_data_b[2][31:16]); // S6
+			mac_o1[2] <= $signed(read_data_b[2][31:16]); // S6
+			mac_o1[3] <= $signed(read_data_b[2][31:16]); // S6
+
+			mac_o2[0] <= $signed(read_data_a[1][31:16]); // C48
+			mac_o2[1] <= $signed(read_data_a[1][15:0]); // C49
+			mac_o2[2] <= $signed(read_data_b[1][31:16]); // C50
+			mac_o2[3] <= $signed(read_data_b[1][15:0]); // C51
+			if (rowTicker == 1'b0) begin
+				address_a[1] <= 'd2; // C4-5
+				address_b[1] <= 'd3; // C6-7
+				rowTicker <= 1'b1;
+			end else begin
+				address_a[1] <= 'd0;
+				address_b[1] <= 'd1;
+				rowTicker <= 1'b0;
+			end
+			if (colTicker == 1'b0) begin
+				colTicker <= 1'b1;
+				address_b[2] <= address_b[2] - 'd3;
+			end else begin
+				colTicker <= 1'b0;
+				address_b[2] <= address_b[2] + 'd1;
+			end
+			m2_state <= m2_CALC_TW_8;
+		end
+		m2_CALC_TW_8: begin
+			mac_o1[0] <= $signed(read_data_b[2][15:0]); // S7
+			mac_o1[1] <= $signed(read_data_b[2][15:0]); // S7
+			mac_o1[2] <= $signed(read_data_b[2][15:0]); // S7
+			mac_o1[3] <= $signed(read_data_b[2][15:0]); // S7
+
+			mac_o2[0] <= $signed(read_data_a[1][31:16]); // C56
+			mac_o2[1] <= $signed(read_data_a[1][15:0]); // C57
+			mac_o2[2] <= $signed(read_data_b[1][31:16]); // C58
+			mac_o2[3] <= $signed(read_data_b[1][15:0]); // C59
+
+			address_a[1] <= address_a[1] + 'd4; // C12-13
+			address_b[1] <= address_b[1] + 'd4; // C14-15
+			write_enable_a[0] <= 1'b1;
+			write_enable_b[0] <= 1'b1;
+			write_data_a[0] <= $signed(mac_acc[0]) >>> 8;
+			write_data_b[0] <= $signed(mac_acc[1]) >>> 8;
+			Tbuffer1 <= $signed(mac_acc[2]) >>> 8;
+			Tbuffer2 <= $signed(mac_acc[3]) >>> 8;
+			mac_clear[0] <= 1'b1;
+			mac_clear[1] <= 1'b1;
+			mac_clear[2] <= 1'b1;
+			mac_clear[3] <= 1'b1;
+			sCounter <= sCounter + 'd2;
+			if (firstRun == 1'b0) begin
+				firstRun <= 1'b1;
+			end else begin
+				address_a[0] <= address_a[0] + 'd2;
+				address_b[0] <= address_b[0] + 'd2;
+			end
+			m2_state <= m2_CALC_TW_1;
+		end
+		m2_WS_DELAY_1: begin
+			sram_s_write_buf <= read_data_a[2];
+			m2_state <= m2_WS_1;
+		end
+		m2_WS_1: begin
+			s_addr_ctr_en <= 1'b1;
+			sram_write_data_m2 <= {sram_s_write_buf[31:24], read_data_a[2][31:24]};
+			sCounter <= sCounter + 'd1;
+			SRAM_use_m2 <= 1'b1;
+			m2_state <= m2_WS_2;
+		end
+		m2_WS_2: begin
+			sram_write_data_m2 <= {sram_s_write_buf[23:16], read_data_a[2][23:16]};
+			sCounter <= sCounter + 'd1;
+			m2_state <= m2_WS_3;
+		end
+		m2_WS_3: begin
+			if (secondRun == 1'b0) begin
+				address_a[2] <= address_a[2] - 'd1;
+				secondRun <= 1'b1;
+			end else begin
+				address_a[2] <= address_a[2] + 'd1;
+				secondRun <= 1'b0;
+			end
+			sram_write_data_m2 <= {sram_s_write_buf[15:8], read_data_a[2][15:8]};
+			sCounter <= sCounter + 'd1;
+			m2_state <= m2_WS_4;
+		end
+		m2_WS_4: begin
+			address_a[2] <= address_a[2] + 'd2;
+			sram_write_data_m2 <= {sram_s_write_buf[7:0], read_data_a[2][7:0]};
+			sCounter <= sCounter + 'd1;
+			m2_state <= m2_WS_5;
+		end
+		m2_WS_5: begin
+			sram_s_write_buf <= read_data_a[2];
+			SRAM_use_m2 <= 1'b0;
+			s_addr_ctr_en <= 1'b0;
+			if(sCounter != 'd64) begin
+				m2_state <= m2_WS_1;
+			end else begin
+				m2_state <= m2_IDLE;
+			end
 		end
 		default: m2_state <= m2_IDLE;
 		endcase
@@ -1014,7 +2005,7 @@ always_comb begin
 						: VGA_SRAM_address;
 	end else if (m1start == 1'b1) begin
 		SRAM_address = SRAM_address_use;
-	end else if (m2start == 1'b1) begin
+	end else if (top_state == S_MILESTONE_2) begin
 		SRAM_address = SRAM_address_use_m2;
 	end else if (m3start == 1'b1) begin
 		SRAM_address = SRAM_address_use_m3;
@@ -1031,7 +2022,19 @@ always_comb begin
 	if ((top_state == S_ENABLE_UART_RX) || (top_state == S_WAIT_UART_RX) || (top_state == S_IDLE)) begin
 		SRAM_write_data = UART_SRAM_write_data;
 	end else begin
-		SRAM_write_data = SRAM_write_data_use;
+		if((m2_state == m2_WS_1) || (m2_state == m2_WS_2) || (m2_state == m2_WS_3) || (m2_state == m2_WS_4) || (m2_state == m2_WS_5) ||
+					(m2_state == m2_CALC_TW_1) ||
+					(m2_state == m2_CALC_TW_2) ||
+					(m2_state == m2_CALC_TW_3) ||
+					(m2_state == m2_CALC_TW_4) ||
+					(m2_state == m2_CALC_TW_5) ||
+					(m2_state == m2_CALC_TW_6) ||
+					(m2_state == m2_CALC_TW_7) ||
+					(m2_state == m2_CALC_TW_8)) begin
+			SRAM_write_data = sram_write_data_m2;
+		end else begin
+			SRAM_write_data = SRAM_write_data_use;
+		end
 	end
 end
 
