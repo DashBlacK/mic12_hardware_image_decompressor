@@ -47,7 +47,10 @@ module project (
 
 		/////// UART                              ////////////
 		input logic UART_RX_I,                    // UART receive signal
-		output logic UART_TX_O                    // UART transmit signal
+		output logic UART_TX_O,                   // UART transmit signal
+
+		output logic [31:0] READ_DATA_A_O [2:0],
+		output logic [31:0] READ_DATA_B_O [2:0]
 );
 
 logic resetn;
@@ -229,6 +232,14 @@ logic [17:0] rgbMax;
 logic exit_commoncase;
 logic [1:0] leadout_counter;
 
+// milestone control logic
+logic m1start;
+logic m1done;
+logic m2start;
+logic m2done;
+logic m3start;
+logic m3done;
+
 always_comb begin
 	if(rgbAddress >= rgbMax) begin
 		exit_commoncase = 1'b1;
@@ -237,6 +248,7 @@ always_comb begin
 	end
 end
 
+// <------------------------- BEGIN MILESTONE 1
 always @(posedge CLOCK_50_I or negedge resetn) begin
 	if (~resetn) begin
 		top_state <= S_IDLE;
@@ -265,6 +277,9 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 		uAddress <= 18'd38400;
 		vAddress <= 18'd57600;
 		rgbAddress <= 18'd146944;
+		m1start <= 1'b0;
+		m2start <= 1'b0;
+		m3start <= 1'b0;
 	end else begin
 		UART_rx_initialize <= 1'b0;
 		UART_rx_enable <= 1'b0;
@@ -302,10 +317,25 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 
 				VGA_enable <= 1'b1;
 
-				top_state <= S_IDLE_1;
+				top_state <= S_MILESTONE_3;
 			end
-			SRAM_use <= 1'b0;
-			SRAM_address_use <= uAddress;
+			m3start <= 1'b1;
+		end
+		S_MILESTONE_3: begin
+			if (m3done == 1'b1) begin
+				top_state <=S_MILESTONE_2;
+				m3start <= 1'b0;
+				m2start <= 1'b1;
+			end
+		end
+		S_MILESTONE_2: begin
+			if (m2done == 1'b1) begin
+				SRAM_use <= 1'b0;
+				SRAM_address_use <= uAddress;
+				top_state <=S_IDLE_1;
+				m2start <= 1'b0;
+				m1start <= 1'b1;
+			end
 		end
 		S_IDLE_1: begin
 			SRAM_address_use <= SRAM_address_use + 1;
@@ -827,6 +857,154 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 	end
 end
 
+// <------------------------- END OF MILESTONE 1
+// <------------------------- BEGIN MILESTONE 2
+m2_state_type m2_state;
+logic [17:0] SRAM_address_use_m2;
+logic SRAM_use_m2;
+logic [17:0] idctAddress;
+logic [15:0] S_prime_buffer;
+
+logic [6:0] address_a[2:0];
+logic [6:0] address_b[2:0];
+logic [31:0] write_data_a [2:0];
+logic [31:0] write_data_b [2:0];
+logic write_enable_a [2:0];
+logic write_enable_b [2:0];
+logic [31:0] read_data_a [2:0];
+logic [31:0] read_data_b [2:0];
+
+logic [17:0] rowIndex;
+logic [17:0] colIndex;
+
+// Instantiate RAM2
+dual_port_RAM2 dual_port_RAM_inst2 (
+	.address_a ( address_a[2] ),
+	.address_b ( address_b[2] ),
+	.clock ( CLOCK_50_I ),
+	.data_a ( write_data_a[2] ),
+	.data_b ( write_data_b[2] ),
+	.wren_a ( write_enable_a[2] ),
+	.wren_b ( write_enable_b[2] ),
+	.q_a ( read_data_a[2] ),
+	.q_b ( read_data_b[2] )
+);
+
+// Instantiate RAM1
+dual_port_RAM1 dual_port_RAM_inst1 (
+	.address_a ( address_a[1] ),
+	.address_b ( address_b[1] ),
+	.clock ( CLOCK_50_I ),
+	.data_a ( write_data_a[1] ),
+	.data_b ( write_data_b[1] ),
+	.wren_a ( write_enable_a[1] ),
+	.wren_b ( write_enable_b[1] ),
+	.q_a ( read_data_a[1] ),
+	.q_b ( read_data_b[1] )
+);
+
+// Instantiate RAM0
+dual_port_RAM0 dual_port_RAM_inst0 (
+	.address_a ( address_a[0] ),
+	.address_b ( address_b[0] ),
+	.clock ( CLOCK_50_I ),
+	.data_a ( write_data_a[0] ),
+	.data_b ( write_data_b[0] ),
+	.wren_a ( write_enable_a[0] ),
+	.wren_b ( write_enable_b[0] ),
+	.q_a ( read_data_a[0] ),
+	.q_b ( read_data_b[0] )
+);
+
+always @(posedge CLOCK_50_I or negedge resetn) begin
+	if (~resetn) begin
+		m2done <= 1'b0;
+		SRAM_use_m2 <= 1'b0;
+		idctAddress <= 18'd76800;
+		address_a[2] <= 7'd0;
+		write_enable_a[2] <= 1'b1;
+		rowIndex <= 18'd0;
+		colIndex <= 18'd0;
+		SRAM_address_use_m2 <= 18'd0;
+	end else if (m2start == 1'b1) begin
+		case (m2_state)
+		m2_IDLE: begin
+			//m2done <= 1'b1;
+			SRAM_address_use_m2 <= idctAddress;
+			colIndex <= colIndex + 1;
+			m2_state <= m2_IDLE_1;
+		end
+		m2_IDLE_1: begin
+			SRAM_address_use_m2 <= idctAddress + colIndex;
+			colIndex <= colIndex + 1;
+			m2_state <= m2_IDLE_2;
+		end
+		m2_IDLE_2: begin
+			SRAM_address_use_m2 <= idctAddress + colIndex;
+			colIndex <= colIndex + 1;
+			m2_state <= m2_FETCH_S_prime_1;
+			write_enable_a[2] <= 1'b1;
+		end
+		m2_FETCH_S_prime_1: begin
+			SRAM_address_use_m2 <= idctAddress + colIndex + rowIndex;
+			colIndex <= colIndex + 1;
+			S_prime_buffer <= SRAM_read_data;
+			m2_state <= m2_FETCH_S_prime_2;
+			if (colIndex > 6) begin
+				rowIndex <= rowIndex + 320;
+				colIndex <= 0;
+			end
+		end
+		m2_FETCH_S_prime_2: begin
+			colIndex <= colIndex + 1;
+			write_data_a[2] <= {{S_prime_buffer},{SRAM_read_data}};
+			address_a[2] <= address_a[2] + 1;
+			if ((rowIndex > 2240)) begin
+				m2_state <= m2_FETCH_S_prime_DELAY_1;
+			end else begin
+				SRAM_address_use_m2 <= idctAddress + colIndex + rowIndex;
+				m2_state <= m2_FETCH_S_prime_1;
+			end
+		end
+		m2_FETCH_S_prime_DELAY_1: begin
+			m2_state <= m2_FETCH_S_prime_DELAY_2;
+		end
+		m2_FETCH_S_prime_DELAY_2: begin
+			write_data_a[2] <= {{S_prime_buffer},{SRAM_read_data}};
+			address_a[2] <= address_a[2] + 1;
+			m2_state <= m2_REQ_S_prime;
+		end
+		m2_REQ_S_prime: begin
+		end
+		m2_CALC_T_1: begin
+		end
+		default: m2_state <= m2_IDLE;
+		endcase
+	end
+end
+
+// <------------------------- END OF MILESTONE 2
+// <------------------------- BEGIN MILESTONE 3
+m3_state_type m3_state;
+logic SRAM_address_use_m3;
+logic SRAM_use_m3;
+
+always @(posedge CLOCK_50_I or negedge resetn) begin
+	if (~resetn) begin
+		m3done <= 1'b0;
+		SRAM_use_m3 <= 1'b0;
+	end else begin
+		case (m3_state)
+		m3_IDLE: begin
+			m3done <= 1'b1;
+		end
+		default: m3_state <= m3_IDLE;
+		endcase
+	end
+end
+
+// <------------------------- END OF MILESTONE 3
+
 assign VGA_base_address = 18'd146944;
 
 always_comb begin
@@ -834,14 +1012,18 @@ always_comb begin
 		SRAM_address = ((top_state == S_ENABLE_UART_RX) | (top_state == S_WAIT_UART_RX))
 						? UART_SRAM_address
 						: VGA_SRAM_address;
-	end else begin
+	end else if (m1start == 1'b1) begin
 		SRAM_address = SRAM_address_use;
+	end else if (m2start == 1'b1) begin
+		SRAM_address = SRAM_address_use_m2;
+	end else if (m3start == 1'b1) begin
+		SRAM_address = SRAM_address_use_m3;
 	end
 	if ((top_state == S_ENABLE_UART_RX) || (top_state == S_WAIT_UART_RX) || (top_state == S_IDLE)) begin
 		SRAM_we_n = ((top_state == S_ENABLE_UART_RX) | (top_state == S_WAIT_UART_RX))
 						? UART_SRAM_we_n
 						: 1'b1;
-	end else if (SRAM_use == 1'b1) begin
+	end else if ((SRAM_use == 1'b1) || (SRAM_use_m2 == 1'b1) || (SRAM_use_m3 == 1'b1)) begin
 		SRAM_we_n = 1'b0;
 	end else begin
 		SRAM_we_n = 1'b1;

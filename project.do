@@ -26,6 +26,9 @@ vlog -sv -svinputport=var -work rtl_work Clock_100_PLL.v
 vlog -sv -svinputport=var -work rtl_work +define+SIMULATION project.v
 #vlog -sv -svinputport=var -work rtl_work tb_project.v
 vlog -sv -svinputport=var -work rtl_work tb_project_v2.v
+vlog -sv -svinputport=var -work rtl_work dual_port_RAM0.v
+vlog -sv -svinputport=var -work rtl_work dual_port_RAM1.v
+vlog -sv -svinputport=var -work rtl_work dual_port_RAM2.v
 
 # specify library for simulation
 #vsim -t 100ps -L altera_mf_ver -lib rtl_work tb_project
@@ -51,6 +54,9 @@ run -all
 
 # save the SRAM content for inspection
 mem save -o SRAM.mem -f mti -data hex -addr hex -startaddress 0 -endaddress 262143 -wordsperline 8 /tb_project_v2/SRAM_component/SRAM_data
+mem save -o simulation_RAM0.mem -f mti -data decimal -addr hex -wordsperline 8 /tb_project_v2/uut/dual_port_RAM_inst0/altsyncram_component/mem_data
+mem save -o simulation_RAM1.mem -f mti -data decimal -addr hex -wordsperline 8 /tb_project_v2/uut/dual_port_RAM_inst1/altsyncram_component/mem_data
+mem save -o simulation_RAM2.mem -f mti -data decimal -addr hex -wordsperline 8 /tb_project_v2/uut/dual_port_RAM_inst2/altsyncram_component/mem_data
 
 destroy .structure
 destroy .signals

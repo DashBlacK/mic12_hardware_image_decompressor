@@ -76,6 +76,9 @@ logic SRAM_OE_N;
 
 logic SRAM_resetn;
 
+logic [31:0] Read_data_A [2:0];
+logic [31:0] Read_data_B [2:0];
+
 parameter VIEW_AREA_LEFT = 160,
 		  VIEW_AREA_RIGHT = 480,
 		  VIEW_AREA_TOP = 120,
@@ -127,7 +130,9 @@ project uut (
 		.SRAM_OE_N_O(SRAM_OE_N),
 		
 		.UART_RX_I(1'b1),
-		.UART_TX_O()
+		.UART_TX_O(),
+		.READ_DATA_A_O(Read_data_A),
+		.READ_DATA_B_O(Read_data_B)
 );
 
 // The emulator for the external SRAM during simulation
@@ -191,7 +196,7 @@ begin
 	
 	//NOTE: this is for milestone 1, in different milestones we will be
 	//writing to different regions so modify as needed
-	for (i=146944; i<262144; i=i+1) begin
+	for (i=0; i<76800; i=i+1) begin
 		if (SRAM_ARRAY_write_count[i]==0) begin
 			if (error_count < `MAX_MISMATCHES) begin
 				$write("error: did not write to location %d (%x hex)\n", i, i);
@@ -310,7 +315,7 @@ always @ (posedge Clock_50) begin
 	if (uut.SRAM_we_n == 1'b0) begin	//signal names within project (instantiated as uut) should match here, assuming names from experiment4a
 	
 		//IMPORTANT: this is the "no write" memory region for milestone 1, change region for different milestones
-		if (uut.SRAM_address < 146944) begin
+		if (uut.SRAM_address > 76800) begin
 			if (warn_writing_out_of_region < `MAX_MISMATCHES) begin
 				$write("critical warning: writing outside of the RGB data region, may corrupt source data in SRAM\n");
 				$write("  writing value %d (%x hex) to location %d (%x hex), sim time %t\n", 

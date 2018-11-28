@@ -1,10 +1,12 @@
 `ifndef DEFINE_STATE
 
-// This defines the states
+// This defines the milestone 1 states
 typedef enum logic [5:0] {
 	S_IDLE,
 	S_ENABLE_UART_RX,
 	S_WAIT_UART_RX,
+	S_MILESTONE_3,
+	S_MILESTONE_2,
 	S_IDLE_1,
 	S_IDLE_11,
 	S_IDLE_2,
@@ -33,6 +35,24 @@ typedef enum logic [5:0] {
 	S_DELAY_1,
 	S_DELAY_2
 } top_state_type;
+
+// This defines the milestone 2 states
+typedef enum logic [4:0] {
+	m2_IDLE,
+	m2_IDLE_1,
+	m2_IDLE_2,
+	m2_FETCH_S_prime_1,
+	m2_FETCH_S_prime_2,
+	m2_FETCH_S_prime_DELAY_1,
+	m2_FETCH_S_prime_DELAY_2,
+	m2_REQ_S_prime,
+	m2_CALC_T_1
+} m2_state_type;
+
+// This defines the milestone 3 states
+typedef enum logic [4:0] {
+	m3_IDLE
+} m3_state_type;
 
 typedef enum logic [1:0] {
 	S_RXC_IDLE,

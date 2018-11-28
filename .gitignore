@@ -12,3 +12,5 @@
 *.ppm
 *.wlf
 rtl_work/
+w*
+*.ver
